@@ -179,6 +179,31 @@ func TestLoadExit(t *testing.T) {
 	}
 }
 
+func TestLoadExtraOptions(t *testing.T) {
+	cfg, err := Load([]string{
+		"TOR_ROLE=middle",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+		"TOR_DNS_RESOLV_CONF=/etc/tor/resolv.conf",
+		"TOR_EXTRA_ARGS=MaxMemInQueues 128 MB;DirPort 80",
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.DNSResolvConf != "/etc/tor/resolv.conf" {
+		t.Errorf("DNSResolvConf = %q", cfg.DNSResolvConf)
+	}
+	want := []string{"MaxMemInQueues 128 MB", "DirPort 80"}
+	if len(cfg.ExtraArgs) != len(want) {
+		t.Fatalf("ExtraArgs = %v, want %v", cfg.ExtraArgs, want)
+	}
+	for i := range want {
+		if cfg.ExtraArgs[i] != want[i] {
+			t.Errorf("ExtraArgs[%d] = %q, want %q", i, cfg.ExtraArgs[i], want[i])
+		}
+	}
+}
+
 func TestLoadWebTunnel(t *testing.T) {
 	cfg, err := Load([]string{
 		"TOR_ROLE=webtunnel",
@@ -493,6 +518,21 @@ func TestLoadRejects(t *testing.T) {
 			"webtunnel listen port text",
 			[]string{"TOR_ROLE=webtunnel", "TOR_NICKNAME=TestWT", "TOR_CONTACT=test@example.com", "TOR_WEBTUNNEL_URL=https://example.com/secret", "TOR_WEBTUNNEL_LISTEN=127.0.0.1:http"},
 			`TOR_WEBTUNNEL_LISTEN port "http" must be between 1 and 65535`,
+		},
+		{
+			"extra args empty entry",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_EXTRA_ARGS=MaxMemInQueues 128 MB;;DirPort 80"},
+			"TOR_EXTRA_ARGS contains an empty entry",
+		},
+		{
+			"extra args multiline",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_EXTRA_ARGS=MaxMemInQueues 128 MB\nDirPort 80"},
+			"TOR_EXTRA_ARGS must be a single line",
+		},
+		{
+			"dns resolv conf multiline",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_DNS_RESOLV_CONF=/etc/tor\nresolv.conf"},
+			"TOR_DNS_RESOLV_CONF must be a single line",
 		},
 	}
 

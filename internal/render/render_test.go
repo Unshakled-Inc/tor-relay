@@ -60,6 +60,17 @@ func TestGolden(t *testing.T) {
 			file: "middle-myfamily.torrc",
 		},
 		{
+			name: "middle extra options",
+			env: []string{
+				"TOR_ROLE=middle",
+				"TOR_NICKNAME=TestRelay",
+				"TOR_CONTACT=test@example.com",
+				"TOR_DNS_RESOLV_CONF=/etc/tor/resolv.conf",
+				"TOR_EXTRA_ARGS=MaxMemInQueues 128 MB;DirPort 80",
+			},
+			file: "middle-extra.torrc",
+		},
+		{
 			name: "middle myfamily url",
 			env: []string{
 				"TOR_ROLE=middle",

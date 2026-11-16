@@ -66,4 +66,12 @@ server {
     add_header X-Frame-Options DENY always;
     add_header X-Content-Type-Options nosniff always;
     add_header Referrer-Policy no-referrer always;
+
+    # If Cloudflare proxies this hostname, trust its client IP header.
+    # Cloudflare's ranges are published at https://www.cloudflare.com/ips/
+    # Add every range with set_real_ip_from, then use the header below.
+    # set_real_ip_from 173.245.48.0/20;
+    # set_real_ip_from 103.21.244.0/22;
+    # ...
+    # real_ip_header CF-Connecting-IP;
 }

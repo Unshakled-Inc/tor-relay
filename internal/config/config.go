@@ -45,6 +45,8 @@ var allowed = map[string]bool{
 	"TOR_BRIDGE_DISTRIBUTION":   true,
 	"TOR_WEBTUNNEL_URL":         true,
 	"TOR_WEBTUNNEL_LISTEN":      true,
+	"TOR_DNS_RESOLV_CONF":       true,
+	"TOR_EXTRA_ARGS":            true,
 }
 
 var logLevels = map[string]bool{
@@ -86,6 +88,8 @@ type Config struct {
 	BridgeDistribution string
 	WebTunnelURL       string
 	WebTunnelListen    string
+	DNSResolvConf      string
+	ExtraArgs          []string
 }
 
 // Load parses and validates a list of KEY=VALUE environment entries.
@@ -345,6 +349,28 @@ func Load(environ []string) (*Config, error) {
 		webTunnelListen = value
 	}
 
+	dnsResolvConf := ""
+	if value := values["TOR_DNS_RESOLV_CONF"]; value != "" {
+		if strings.ContainsAny(value, "\r\n") {
+			return nil, fmt.Errorf("TOR_DNS_RESOLV_CONF must be a single line")
+		}
+		dnsResolvConf = value
+	}
+
+	extraArgs := []string{}
+	if value := values["TOR_EXTRA_ARGS"]; value != "" {
+		if strings.ContainsAny(value, "\r\n") {
+			return nil, fmt.Errorf("TOR_EXTRA_ARGS must be a single line")
+		}
+		for _, arg := range strings.Split(value, ";") {
+			arg = strings.TrimSpace(arg)
+			if arg == "" {
+				return nil, fmt.Errorf("TOR_EXTRA_ARGS contains an empty entry")
+			}
+			extraArgs = append(extraArgs, arg)
+		}
+	}
+
 	return &Config{
 		Role:               role,
 		Nickname:           nickname,
@@ -367,6 +393,8 @@ func Load(environ []string) (*Config, error) {
 		BridgeDistribution: bridgeDistribution,
 		WebTunnelURL:       webTunnelURL,
 		WebTunnelListen:    webTunnelListen,
+		DNSResolvConf:      dnsResolvConf,
+		ExtraArgs:          extraArgs,
 	}, nil
 }
 

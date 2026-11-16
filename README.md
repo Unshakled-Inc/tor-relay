@@ -141,10 +141,27 @@ The current release supports these variables:
 | `TOR_BRIDGE_DISTRIBUTION` | no | `any` | `any`, `none`, `https`, `email`, or `settings` |
 | `TOR_WEBTUNNEL_URL` | webtunnel only | | https URL with a host; the path may be `/` for a dedicated domain |
 | `TOR_WEBTUNNEL_LISTEN` | no | `127.0.0.1:15000` | host:port for the webtunnel listener |
+| `TOR_DNS_RESOLV_CONF` | no | | Path rendered as `ServerDNSResolvConfFile`, mainly for exit relays |
+| `TOR_EXTRA_ARGS` | no | | Semicolon-separated torrc lines, rendered verbatim at the end |
 
 Any other variable starting with `TOR_` is rejected with an error naming it. This catches typos instead of silently ignoring them.
 
 `TOR_SANDBOX=1` enables tor's seccomp sandbox. It is the default. Set it to `0` only if you are debugging a sandbox-related failure.
+
+### Extra torrc options
+
+`TOR_EXTRA_ARGS` appends arbitrary torrc lines. Separate entries with semicolons. Each entry is rendered verbatim after the role-specific settings and after `Sandbox`, and before the `/etc/tor/torrc.d/` include. This is the escape hatch for options that do not have a dedicated variable.
+
+Examples:
+
+- `TOR_EXTRA_ARGS=MaxMemInQueues 128 MB`
+- `TOR_EXTRA_ARGS=ServerDNSResolvConfFile /etc/tor/resolv.conf;ServerDNSDetectHijacking 0`
+- `TOR_EXTRA_ARGS=DirPort 80;DirPortFrontPage /etc/tor/exit-notice.html`
+- `TOR_EXTRA_ARGS=NumCPUs 2;ConnLimit 5000`
+
+Do not use semicolons inside a value. Run `torinit verify` after changing them. Files in `/etc/tor/torrc.d/` are included last, so they can override these settings.
+
+`TOR_DNS_RESOLV_CONF` is a convenience for exit relays. It renders `ServerDNSResolvConfFile <path>`. Point it at a resolver file that lists your DNS resolver, for example `nameserver 1.1.1.1` for Cloudflare DNS. Use `TOR_EXTRA_ARGS` for the other `ServerDNS*` options.
 
 ### Rendered torrc
 
@@ -404,6 +421,8 @@ webtunnel 10.0.0.2:443 <FINGERPRINT> url=https://example.com/secret-path
 
 See `examples/webtunnel/` for a compose file and an `nginx.conf.example`.
 
+Cloudflare proxy and Cloudflare Tunnel work in front of this bridge. If Cloudflare proxies the hostname, keep the origin nginx on 443 with a certificate Cloudflare trusts, allow WebSocket Upgrade, and trust Cloudflare's client IP ranges in nginx. If you use Cloudflare Tunnel, point it at `http://127.0.0.1:15000`; no public IP or open ports are needed. Cloudflare terminates TLS at its edge, so the URL is the public Cloudflare hostname.
+
 ## Hardening
 
 The runtime image is intentionally minimal:
@@ -542,6 +561,9 @@ actionlint
 - `TOR_ROLE=webtunnel requires TOR_WEBTUNNEL_URL`: add the public https URL, including the path, to the env file.
 - `TOR_WEBTUNNEL_LISTEN ... must be host:port`: use a value such as `127.0.0.1:15000` or `0.0.0.0:15000`.
 - The reverse proxy returns 502: check that the bridge is running, that it listens on the address in `TOR_WEBTUNNEL_LISTEN`, and that the nginx location path matches the path in `TOR_WEBTUNNEL_URL`.
+- `TOR_EXTRA_ARGS contains an empty entry`: remove the extra semicolon between entries.
+- `TOR_EXTRA_ARGS must be a single line`: separate entries with semicolons, not newlines.
+- `TOR_DNS_RESOLV_CONF must be a single line`: use one path to a resolver file.
 - The container exits immediately: run `torinit verify` with the same env file. The error message names the invalid variable or value.
 - `exec: "/bin/sh": stat /bin/sh: no such file or directory`: expected. The runtime image has no shell. Use `torinit` subcommands or `docker exec` with the torinit binary.
 - Healthcheck is unhealthy: check the tor log and the PID file at `/var/lib/tor/.torinit/pid`.

@@ -94,11 +94,18 @@ func Render(cfg *config.Config, dataDir string, includeTorrcD bool) string {
 			b.WriteString("ExitPolicy reject6 *:*\n")
 		}
 	}
+	if cfg.DNSResolvConf != "" {
+		fmt.Fprintf(&b, "ServerDNSResolvConfFile %s\n", cfg.DNSResolvConf)
+	}
 	sandbox := "0"
 	if cfg.Sandbox {
 		sandbox = "1"
 	}
 	fmt.Fprintf(&b, "Sandbox %s\n", sandbox)
+	for _, arg := range cfg.ExtraArgs {
+		b.WriteString(arg)
+		b.WriteString("\n")
+	}
 	if includeTorrcD {
 		fmt.Fprintf(&b, "%%include %s/\n", TorrcD)
 	}

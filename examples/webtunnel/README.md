@@ -27,3 +27,9 @@ webtunnel 10.0.0.2:443 <FINGERPRINT> url=https://example.com/secret-path
 `TOR_SANDBOX` defaults to `0` for WebTunnel bridges. Tor 0.4.9.17 reports that managed proxies are not compatible with Sandbox mode, so keep it at `0`.
 
 For extra torrc options such as `MaxMemInQueues`, drop a `*.conf` file into `/etc/tor/torrc.d/`.
+
+## Cloudflare
+
+Cloudflare proxy works in front of the bridge. Keep the origin nginx on 443 with a certificate Cloudflare trusts, allow WebSocket Upgrade, and add Cloudflare's ranges with `set_real_ip_from` plus `real_ip_header CF-Connecting-IP` if you want the real client IP. Cloudflare terminates TLS at its edge, so `TOR_WEBTUNNEL_URL` is the public Cloudflare hostname.
+
+Cloudflare Tunnel also works. Point the tunnel at `http://127.0.0.1:15000`, or at the origin nginx if you keep it. No public IP or open ports are needed. If the tunnel terminates TLS, the origin certificate can be a Cloudflare Origin Certificate.
