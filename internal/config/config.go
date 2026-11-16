@@ -323,9 +323,6 @@ func Load(environ []string) (*Config, error) {
 		if parsed.Scheme != "https" || parsed.Host == "" {
 			return nil, fmt.Errorf("TOR_WEBTUNNEL_URL %q must be an https URL with a host", value)
 		}
-		if parsed.Path == "" || parsed.Path == "/" {
-			return nil, fmt.Errorf("TOR_WEBTUNNEL_URL %q must include a secret path", value)
-		}
 		webTunnelURL = value
 	}
 	if role == RoleWebTunnel && webTunnelURL == "" {

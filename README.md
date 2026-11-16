@@ -139,7 +139,7 @@ The current release supports these variables:
 | `TOR_EXIT_IPV6` | no | `0` | `0` or `1`, renders `IPv6Exit 1` when set |
 | `TOR_OBFS4_PORT` | bridge only | | 1 to 65535, must differ from `TOR_ORPORT` |
 | `TOR_BRIDGE_DISTRIBUTION` | no | `any` | `any`, `none`, `https`, `email`, or `settings` |
-| `TOR_WEBTUNNEL_URL` | webtunnel only | | https URL with a host and a secret path |
+| `TOR_WEBTUNNEL_URL` | webtunnel only | | https URL with a host; the path may be `/` for a dedicated domain |
 | `TOR_WEBTUNNEL_LISTEN` | no | `127.0.0.1:15000` | host:port for the webtunnel listener |
 
 Any other variable starting with `TOR_` is rejected with an error naming it. This catches typos instead of silently ignoring them.
@@ -367,12 +367,14 @@ A WebTunnel bridge imitates ordinary HTTPS browsing. It needs a domain you contr
 
 https://community.torproject.org/relay/setup/webtunnel/
 
-Set the role and the public URL, including the secret path:
+Set the role and the public URL. The path may be a secret path, or `/` when the whole domain is dedicated to WebTunnel:
 
 ```
 TOR_ROLE=webtunnel
 TOR_WEBTUNNEL_URL=https://example.com/secret-path
 ```
+
+For a dedicated domain, `https://example.com/` is also valid. The nginx location must match the URL path.
 
 The torrc uses the directives from the official guide:
 
@@ -386,9 +388,11 @@ ServerTransportOptions webtunnel url=https://example.com/secret-path
 ExtORPort auto
 ```
 
-`TOR_WEBTUNNEL_LISTEN` defaults to `127.0.0.1:15000`. The reverse proxy must be able to reach it, so host networking is recommended. If the proxy runs in another container, set `TOR_WEBTUNNEL_LISTEN=0.0.0.0:15000` and publish the port.
+`TOR_WEBTUNNEL_LISTEN` defaults to `127.0.0.1:15000`. The example compose publishes `127.0.0.1:15000` and sets the listener to `0.0.0.0:15000` inside the container. If you use host networking instead, keep the default `127.0.0.1:15000`.
 
 `TOR_SANDBOX` defaults to `0` for WebTunnel bridges. Tor 0.4.9.17 reports that managed proxies are not compatible with Sandbox mode, so keep it at `0`.
+
+For extra torrc options such as `MaxMemInQueues`, drop a `*.conf` file into `/etc/tor/torrc.d/`.
 
 The bridge line has this shape:
 
@@ -535,9 +539,8 @@ actionlint
 - `bridgeline: read bridge line ...`: tor has not started lyrebird yet, or the data directory does not contain `pt_state/obfs4_bridgeline.txt`. Check that the bridge is running.
 - `bridgeline: read fingerprint ...`: tor has not written `/var/lib/tor/fingerprint` yet. Wait for the first start to finish.
 - `Managed proxies are not compatible with Sandbox mode`: remove `TOR_SANDBOX=1` from an obfs4 or WebTunnel bridge. The bridge default is already `0`.
-- `TOR_ROLE=webtunnel requires TOR_WEBTUNNEL_URL`: add the public https URL, including the secret path, to the env file.
-- `TOR_WEBTUNNEL_URL ... must include a secret path`: use a URL such as `https://example.com/secret-path`, not the bare domain.
-- `TOR_WEBTUNNEL_LISTEN ... must be host:port`: use a value such as `127.0.0.1:15000`.
+- `TOR_ROLE=webtunnel requires TOR_WEBTUNNEL_URL`: add the public https URL, including the path, to the env file.
+- `TOR_WEBTUNNEL_LISTEN ... must be host:port`: use a value such as `127.0.0.1:15000` or `0.0.0.0:15000`.
 - The reverse proxy returns 502: check that the bridge is running, that it listens on the address in `TOR_WEBTUNNEL_LISTEN`, and that the nginx location path matches the path in `TOR_WEBTUNNEL_URL`.
 - The container exits immediately: run `torinit verify` with the same env file. The error message names the invalid variable or value.
 - `exec: "/bin/sh": stat /bin/sh: no such file or directory`: expected. The runtime image has no shell. Use `torinit` subcommands or `docker exec` with the torinit binary.

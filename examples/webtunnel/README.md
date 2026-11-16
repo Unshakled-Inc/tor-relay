@@ -4,10 +4,12 @@ A WebTunnel bridge imitates ordinary HTTPS browsing. It needs a domain you contr
 
 https://community.torproject.org/relay/setup/webtunnel/
 
-The compose file uses host networking so the reverse proxy on the host can reach the WebTunnel listener at `127.0.0.1:15000`. Tor binds `ORPort 127.0.0.1:auto` and uses `AssumeReachable 1`, so no public ORPort is needed.
+The compose file publishes the WebTunnel listener on `127.0.0.1:15000` and sets `TOR_WEBTUNNEL_LISTEN=0.0.0.0:15000` inside the container. The reverse proxy on the host connects to `127.0.0.1:15000`. Tor binds `ORPort 127.0.0.1:auto` inside the container, so no ORPort mapping is needed.
 
-1. Copy `nginx.conf.example` into your nginx configuration, replace `example.com`, the certificate paths, and `/secret-path` with your values, then reload nginx.
-2. Set `TOR_WEBTUNNEL_URL` in `.env.example` to the same https URL, including the secret path.
+The URL may use a secret path such as `https://example.com/secret-path`, or a root path such as `https://example.com/` when the whole domain is dedicated to WebTunnel. The nginx location must match the URL path.
+
+1. Copy `nginx.conf.example` into your nginx configuration, replace `example.com`, the certificate paths, and the location path, then reload nginx.
+2. Set `TOR_WEBTUNNEL_URL` in `.env.example` to the same https URL.
 3. Start the bridge:
 
 ```
@@ -23,3 +25,5 @@ webtunnel 10.0.0.2:443 <FINGERPRINT> url=https://example.com/secret-path
 `10.0.0.2` is a placeholder address required by the pluggable transport specification. Replace `<FINGERPRINT>` with the fingerprint from `/var/lib/tor/fingerprint`, and use your real URL.
 
 `TOR_SANDBOX` defaults to `0` for WebTunnel bridges. Tor 0.4.9.17 reports that managed proxies are not compatible with Sandbox mode, so keep it at `0`.
+
+For extra torrc options such as `MaxMemInQueues`, drop a `*.conf` file into `/etc/tor/torrc.d/`.

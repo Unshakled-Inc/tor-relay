@@ -202,6 +202,32 @@ func TestLoadWebTunnel(t *testing.T) {
 		t.Error("Sandbox = true, want false by default for a webtunnel bridge")
 	}
 
+	rootPath, err := Load([]string{
+		"TOR_ROLE=webtunnel",
+		"TOR_NICKNAME=TestWT",
+		"TOR_CONTACT=test@example.com",
+		"TOR_WEBTUNNEL_URL=https://example.com/",
+	})
+	if err != nil {
+		t.Fatalf("Load root path: %v", err)
+	}
+	if rootPath.WebTunnelURL != "https://example.com/" {
+		t.Errorf("WebTunnelURL = %q", rootPath.WebTunnelURL)
+	}
+
+	noPath, err := Load([]string{
+		"TOR_ROLE=webtunnel",
+		"TOR_NICKNAME=TestWT",
+		"TOR_CONTACT=test@example.com",
+		"TOR_WEBTUNNEL_URL=https://example.com",
+	})
+	if err != nil {
+		t.Fatalf("Load no path: %v", err)
+	}
+	if noPath.WebTunnelURL != "https://example.com" {
+		t.Errorf("WebTunnelURL = %q", noPath.WebTunnelURL)
+	}
+
 	override, err := Load([]string{
 		"TOR_ROLE=webtunnel",
 		"TOR_NICKNAME=TestWT",
@@ -447,11 +473,6 @@ func TestLoadRejects(t *testing.T) {
 			"webtunnel url without host",
 			[]string{"TOR_ROLE=webtunnel", "TOR_NICKNAME=TestWT", "TOR_CONTACT=test@example.com", "TOR_WEBTUNNEL_URL=https:///secret"},
 			"must be an https URL with a host",
-		},
-		{
-			"webtunnel url without path",
-			[]string{"TOR_ROLE=webtunnel", "TOR_NICKNAME=TestWT", "TOR_CONTACT=test@example.com", "TOR_WEBTUNNEL_URL=https://example.com/"},
-			"must include a secret path",
 		},
 		{
 			"webtunnel url with whitespace",
