@@ -1,0 +1,10 @@
+*.secret_family_key
+secret_id_key
+ed25519_master_id_secret_key
+*.env
+.env
+!*.env.example
+/dist/
+/tmp/
+*.tgz
+*.age
