@@ -25,7 +25,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
-COPY keys/tor-release.asc scripts/verify-tor-source.sh /src/
+COPY keys/tor-release.asc scripts/verify-tor-source.sh scripts/collect-libs.sh /src/
 
 RUN gpg --dearmor < /src/tor-release.asc > /src/tor-release.gpg \
  && chmod +x /src/verify-tor-source.sh \
@@ -46,4 +46,10 @@ RUN tar -xzf "/src/work/tor-$TOR_VERSION.tar.gz" -C /src \
  && grep -Eq 'libseccomp \(--disable-seccomp\):[[:space:]]+yes' /src/configure.out \
  && grep -Eq 'libzstd \(--enable-zstd\):[[:space:]]+yes' /src/configure.out \
  && make -j"$(nproc)" \
- && make install DESTDIR=/out
+ && make install DESTDIR=/out \
+ && chmod +x /src/collect-libs.sh \
+ && /src/collect-libs.sh /out/usr/bin/tor /rootfs \
+ && mkdir -p /rootfs/usr/bin \
+ && cp -a /out/usr/bin/tor /rootfs/usr/bin/tor \
+ && mkdir -p /rootfs/usr/share/tor \
+ && cp -a /out/usr/share/tor/geoip /out/usr/share/tor/geoip6 /rootfs/usr/share/tor/
