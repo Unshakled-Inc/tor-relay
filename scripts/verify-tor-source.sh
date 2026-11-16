@@ -31,6 +31,17 @@ if [ ! -s "$keyring" ]; then
     exit 1
 fi
 
+# Resolve relative paths against the caller's directory before cd, so a
+# relative keyring or work dir keeps working after the cd below.
+case "$keyring" in
+    /*) ;;
+    *) keyring=$(pwd)/$keyring ;;
+esac
+case "$workdir" in
+    /*) ;;
+    *) workdir=$(pwd)/$workdir ;;
+esac
+
 mkdir -p "$workdir"
 cd "$workdir"
 
