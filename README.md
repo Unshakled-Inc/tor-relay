@@ -150,18 +150,17 @@ Any other variable starting with `TOR_` is rejected with an error naming it. Thi
 
 ### Extra torrc options
 
-`TOR_EXTRA_ARGS` appends arbitrary torrc lines. Separate entries with semicolons. Each entry is rendered verbatim after the role-specific settings and after `Sandbox`, and before the `/etc/tor/torrc.d/` include. This is the escape hatch for options that do not have a dedicated variable.
+`TOR_EXTRA_ARGS` appends arbitrary torrc lines. Separate entries with semicolons, for example:
 
-Examples:
+```
+TOR_EXTRA_ARGS=MaxMemInQueues 128 MB;DirPort 80
+```
 
-- `TOR_EXTRA_ARGS=MaxMemInQueues 128 MB`
-- `TOR_EXTRA_ARGS=ServerDNSResolvConfFile /etc/tor/resolv.conf;ServerDNSDetectHijacking 0`
-- `TOR_EXTRA_ARGS=DirPort 80;DirPortFrontPage /etc/tor/exit-notice.html`
-- `TOR_EXTRA_ARGS=NumCPUs 2;ConnLimit 5000`
+It is rendered after the role-specific settings and after `Sandbox`, and before the `/etc/tor/torrc.d/` include. Any single-line directive from the pinned tor man page is allowed. `torinit` does not parse the directive; tor validates it at startup and in `torinit verify`.
 
-Do not use semicolons inside a value. Run `torinit verify` after changing them. Files in `/etc/tor/torrc.d/` are included last, so they can override these settings.
+`TOR_DNS_RESOLV_CONF` renders `ServerDNSResolvConfFile <path>`, mainly for exit relays and Cloudflare DNS resolver files.
 
-`TOR_DNS_RESOLV_CONF` is a convenience for exit relays. It renders `ServerDNSResolvConfFile <path>`. Point it at a resolver file that lists your DNS resolver, for example `nameserver 1.1.1.1` for Cloudflare DNS. Use `TOR_EXTRA_ARGS` for the other `ServerDNS*` options.
+See [docs/extra-args.md](https://github.com/Unshakled-Inc/tor-relay/blob/main/docs/extra-args.md) for the full format, allowed directives, ordering rules, managed directives, and examples for memory, DNS, DirPort, accounting, logging, metrics, and Cloudflare.
 
 ### Rendered torrc
 
