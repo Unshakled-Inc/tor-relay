@@ -1,0 +1,21 @@
+services:
+  tor-relay:
+    # Published image: docker.io/unshakled/tor-relay:latest
+    image: tor-relay:dev
+    # Host networking lets the reverse proxy on the host reach the
+    # WebTunnel listener at 127.0.0.1:15000. Tor binds ORPort on
+    # 127.0.0.1:auto and does not need a public ORPort.
+    network_mode: host
+    env_file:
+      - .env.example
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    volumes:
+      - tor-data:/var/lib/tor
+
+volumes:
+  tor-data:

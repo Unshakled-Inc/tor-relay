@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -12,9 +13,10 @@ import (
 )
 
 const (
-	RoleMiddle = "middle"
-	RoleExit   = "exit"
-	RoleBridge = "bridge"
+	RoleMiddle    = "middle"
+	RoleExit      = "exit"
+	RoleBridge    = "bridge"
+	RoleWebTunnel = "webtunnel"
 )
 
 var nicknameRE = regexp.MustCompile(`^[A-Za-z0-9]{1,19}$`)
@@ -41,6 +43,8 @@ var allowed = map[string]bool{
 	"TOR_EXIT_IPV6":             true,
 	"TOR_OBFS4_PORT":            true,
 	"TOR_BRIDGE_DISTRIBUTION":   true,
+	"TOR_WEBTUNNEL_URL":         true,
+	"TOR_WEBTUNNEL_LISTEN":      true,
 }
 
 var logLevels = map[string]bool{
@@ -80,6 +84,8 @@ type Config struct {
 	ExitIPv6           bool
 	Obfs4Port          int
 	BridgeDistribution string
+	WebTunnelURL       string
+	WebTunnelListen    string
 }
 
 // Load parses and validates a list of KEY=VALUE environment entries.
@@ -103,9 +109,9 @@ func Load(environ []string) (*Config, error) {
 		return nil, fmt.Errorf("TOR_ROLE is required")
 	}
 	switch role {
-	case RoleMiddle, RoleExit, RoleBridge:
+	case RoleMiddle, RoleExit, RoleBridge, RoleWebTunnel:
 	default:
-		return nil, fmt.Errorf("TOR_ROLE %q is not supported, use %q, %q, or %q", role, RoleMiddle, RoleExit, RoleBridge)
+		return nil, fmt.Errorf("TOR_ROLE %q is not supported, use %q, %q, %q, or %q", role, RoleMiddle, RoleExit, RoleBridge, RoleWebTunnel)
 	}
 	if role == RoleExit && values["I_UNDERSTAND_EXIT"] != "true" {
 		return nil, fmt.Errorf("TOR_ROLE=exit requires I_UNDERSTAND_EXIT=true")
@@ -154,7 +160,7 @@ func Load(environ []string) (*Config, error) {
 		return nil, fmt.Errorf("TOR_BANDWIDTH_BURST must be a single line")
 	}
 
-	sandbox := role != RoleBridge
+	sandbox := role != RoleBridge && role != RoleWebTunnel
 	if value := values["TOR_SANDBOX"]; value != "" {
 		switch value {
 		case "0":
@@ -305,6 +311,43 @@ func Load(environ []string) (*Config, error) {
 		bridgeDistribution = lower
 	}
 
+	webTunnelURL := ""
+	if value := values["TOR_WEBTUNNEL_URL"]; value != "" {
+		if strings.ContainsAny(value, " \t\r\n") {
+			return nil, fmt.Errorf("TOR_WEBTUNNEL_URL must not contain whitespace")
+		}
+		parsed, err := url.Parse(value)
+		if err != nil {
+			return nil, fmt.Errorf("TOR_WEBTUNNEL_URL %q is not a URL: %v", value, err)
+		}
+		if parsed.Scheme != "https" || parsed.Host == "" {
+			return nil, fmt.Errorf("TOR_WEBTUNNEL_URL %q must be an https URL with a host", value)
+		}
+		if parsed.Path == "" || parsed.Path == "/" {
+			return nil, fmt.Errorf("TOR_WEBTUNNEL_URL %q must include a secret path", value)
+		}
+		webTunnelURL = value
+	}
+	if role == RoleWebTunnel && webTunnelURL == "" {
+		return nil, fmt.Errorf("TOR_ROLE=webtunnel requires TOR_WEBTUNNEL_URL")
+	}
+
+	webTunnelListen := "127.0.0.1:15000"
+	if value := values["TOR_WEBTUNNEL_LISTEN"]; value != "" {
+		if strings.ContainsAny(value, "\r\n") {
+			return nil, fmt.Errorf("TOR_WEBTUNNEL_LISTEN must be a single line")
+		}
+		_, portStr, err := net.SplitHostPort(value)
+		if err != nil {
+			return nil, fmt.Errorf("TOR_WEBTUNNEL_LISTEN %q must be host:port", value)
+		}
+		n, err := strconv.Atoi(portStr)
+		if err != nil || n < 1 || n > 65535 {
+			return nil, fmt.Errorf("TOR_WEBTUNNEL_LISTEN port %q must be between 1 and 65535", portStr)
+		}
+		webTunnelListen = value
+	}
+
 	return &Config{
 		Role:               role,
 		Nickname:           nickname,
@@ -325,6 +368,8 @@ func Load(environ []string) (*Config, error) {
 		ExitIPv6:           exitIPv6,
 		Obfs4Port:          obfs4Port,
 		BridgeDistribution: bridgeDistribution,
+		WebTunnelURL:       webTunnelURL,
+		WebTunnelListen:    webTunnelListen,
 	}, nil
 }
 

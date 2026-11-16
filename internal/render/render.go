@@ -38,51 +38,61 @@ func Render(cfg *config.Config, dataDir string, includeTorrcD bool) string {
 	b.WriteString("SocksPort 0\n")
 	fmt.Fprintf(&b, "Nickname %s\n", cfg.Nickname)
 	fmt.Fprintf(&b, "ContactInfo %s\n", cfg.Contact)
-	fmt.Fprintf(&b, "ORPort %d\n", cfg.ORPort)
-	if cfg.Address != "" {
-		fmt.Fprintf(&b, "Address %s\n", cfg.Address)
-	}
-	if cfg.BandwidthRate != "" {
-		fmt.Fprintf(&b, "RelayBandwidthRate %s\n", cfg.BandwidthRate)
-	}
-	if cfg.BandwidthBurst != "" {
-		fmt.Fprintf(&b, "RelayBandwidthBurst %s\n", cfg.BandwidthBurst)
-	}
-	for _, id := range cfg.FamilyID {
-		fmt.Fprintf(&b, "FamilyId %s\n", id)
-	}
-	if len(cfg.MyFamily) > 0 {
-		b.WriteString("MyFamily ")
-		for i, fp := range cfg.MyFamily {
-			if i > 0 {
-				b.WriteString(",")
-			}
-			b.WriteString("$")
-			b.WriteString(fp)
-		}
-		b.WriteString("\n")
-	}
-	if cfg.MyFamilyURL != "" {
-		fmt.Fprintf(&b, "%%include %s\n", filepath.Join(dataDir, ".torinit", "family.conf"))
-	}
-	if cfg.Role == config.RoleExit {
-		b.WriteString("ExitRelay 1\n")
-		for _, policy := range cfg.ExitPolicy {
-			fmt.Fprintf(&b, "ExitPolicy %s\n", policy)
-		}
-		if cfg.ExitIPv6 {
-			b.WriteString("IPv6Exit 1\n")
-		}
-	} else if cfg.Role == config.RoleBridge {
+	if cfg.Role == config.RoleWebTunnel {
 		b.WriteString("BridgeRelay 1\n")
-		b.WriteString("ServerTransportPlugin obfs4 exec /usr/local/bin/lyrebird\n")
-		fmt.Fprintf(&b, "ServerTransportListenAddr obfs4 0.0.0.0:%d\n", cfg.Obfs4Port)
+		b.WriteString("ORPort 127.0.0.1:auto\n")
+		b.WriteString("AssumeReachable 1\n")
+		b.WriteString("ServerTransportPlugin webtunnel exec /usr/local/bin/webtunnel\n")
+		fmt.Fprintf(&b, "ServerTransportListenAddr webtunnel %s\n", cfg.WebTunnelListen)
+		fmt.Fprintf(&b, "ServerTransportOptions webtunnel url=%s\n", cfg.WebTunnelURL)
 		b.WriteString("ExtORPort auto\n")
-		fmt.Fprintf(&b, "BridgeDistribution %s\n", cfg.BridgeDistribution)
 	} else {
-		b.WriteString("ExitRelay 0\n")
-		b.WriteString("ExitPolicy reject *:*\n")
-		b.WriteString("ExitPolicy reject6 *:*\n")
+		fmt.Fprintf(&b, "ORPort %d\n", cfg.ORPort)
+		if cfg.Address != "" {
+			fmt.Fprintf(&b, "Address %s\n", cfg.Address)
+		}
+		if cfg.BandwidthRate != "" {
+			fmt.Fprintf(&b, "RelayBandwidthRate %s\n", cfg.BandwidthRate)
+		}
+		if cfg.BandwidthBurst != "" {
+			fmt.Fprintf(&b, "RelayBandwidthBurst %s\n", cfg.BandwidthBurst)
+		}
+		for _, id := range cfg.FamilyID {
+			fmt.Fprintf(&b, "FamilyId %s\n", id)
+		}
+		if len(cfg.MyFamily) > 0 {
+			b.WriteString("MyFamily ")
+			for i, fp := range cfg.MyFamily {
+				if i > 0 {
+					b.WriteString(",")
+				}
+				b.WriteString("$")
+				b.WriteString(fp)
+			}
+			b.WriteString("\n")
+		}
+		if cfg.MyFamilyURL != "" {
+			fmt.Fprintf(&b, "%%include %s\n", filepath.Join(dataDir, ".torinit", "family.conf"))
+		}
+		if cfg.Role == config.RoleExit {
+			b.WriteString("ExitRelay 1\n")
+			for _, policy := range cfg.ExitPolicy {
+				fmt.Fprintf(&b, "ExitPolicy %s\n", policy)
+			}
+			if cfg.ExitIPv6 {
+				b.WriteString("IPv6Exit 1\n")
+			}
+		} else if cfg.Role == config.RoleBridge {
+			b.WriteString("BridgeRelay 1\n")
+			b.WriteString("ServerTransportPlugin obfs4 exec /usr/local/bin/lyrebird\n")
+			fmt.Fprintf(&b, "ServerTransportListenAddr obfs4 0.0.0.0:%d\n", cfg.Obfs4Port)
+			b.WriteString("ExtORPort auto\n")
+			fmt.Fprintf(&b, "BridgeDistribution %s\n", cfg.BridgeDistribution)
+		} else {
+			b.WriteString("ExitRelay 0\n")
+			b.WriteString("ExitPolicy reject *:*\n")
+			b.WriteString("ExitPolicy reject6 *:*\n")
+		}
 	}
 	sandbox := "0"
 	if cfg.Sandbox {

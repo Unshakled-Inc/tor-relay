@@ -179,6 +179,48 @@ func TestLoadExit(t *testing.T) {
 	}
 }
 
+func TestLoadWebTunnel(t *testing.T) {
+	cfg, err := Load([]string{
+		"TOR_ROLE=webtunnel",
+		"TOR_NICKNAME=TestWT",
+		"TOR_CONTACT=test@example.com",
+		"TOR_WEBTUNNEL_URL=https://example.com/secret-path",
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Role != RoleWebTunnel {
+		t.Errorf("Role = %q, want webtunnel", cfg.Role)
+	}
+	if cfg.WebTunnelURL != "https://example.com/secret-path" {
+		t.Errorf("WebTunnelURL = %q", cfg.WebTunnelURL)
+	}
+	if cfg.WebTunnelListen != "127.0.0.1:15000" {
+		t.Errorf("WebTunnelListen = %q, want 127.0.0.1:15000", cfg.WebTunnelListen)
+	}
+	if cfg.Sandbox {
+		t.Error("Sandbox = true, want false by default for a webtunnel bridge")
+	}
+
+	override, err := Load([]string{
+		"TOR_ROLE=webtunnel",
+		"TOR_NICKNAME=TestWT",
+		"TOR_CONTACT=test@example.com",
+		"TOR_WEBTUNNEL_URL=https://example.com/secret-path",
+		"TOR_WEBTUNNEL_LISTEN=0.0.0.0:15000",
+		"TOR_SANDBOX=1",
+	})
+	if err != nil {
+		t.Fatalf("Load override: %v", err)
+	}
+	if override.WebTunnelListen != "0.0.0.0:15000" {
+		t.Errorf("WebTunnelListen = %q, want 0.0.0.0:15000", override.WebTunnelListen)
+	}
+	if !override.Sandbox {
+		t.Error("Sandbox = false, want true when explicitly set")
+	}
+}
+
 func TestLoadBridge(t *testing.T) {
 	cfg, err := Load([]string{
 		"TOR_ROLE=bridge",
@@ -283,7 +325,7 @@ func TestLoadRejects(t *testing.T) {
 		want string
 	}{
 		{"missing role", []string{"TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com"}, "TOR_ROLE is required"},
-		{"bad role", append(base[:0:0], "TOR_ROLE=webtunnel", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com"), `TOR_ROLE "webtunnel" is not supported`},
+		{"bad role", append(base[:0:0], "TOR_ROLE=snowflake", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com"), `TOR_ROLE "snowflake" is not supported`},
 		{"missing nickname", []string{"TOR_ROLE=middle", "TOR_CONTACT=test@example.com"}, "TOR_NICKNAME is required"},
 		{"empty nickname", []string{"TOR_ROLE=middle", "TOR_NICKNAME=", "TOR_CONTACT=test@example.com"}, "TOR_NICKNAME is required"},
 		{"long nickname", []string{"TOR_ROLE=middle", "TOR_NICKNAME=12345678901234567890", "TOR_CONTACT=test@example.com"}, "must match"},
@@ -390,6 +432,46 @@ func TestLoadRejects(t *testing.T) {
 			"bridge bad distribution",
 			[]string{"TOR_ROLE=bridge", "TOR_NICKNAME=TestBridge", "TOR_CONTACT=test@example.com", "TOR_OBFS4_PORT=8443", "TOR_BRIDGE_DISTRIBUTION=bogus"},
 			`TOR_BRIDGE_DISTRIBUTION "bogus" must be one of`,
+		},
+		{
+			"webtunnel without url",
+			[]string{"TOR_ROLE=webtunnel", "TOR_NICKNAME=TestWT", "TOR_CONTACT=test@example.com"},
+			"TOR_ROLE=webtunnel requires TOR_WEBTUNNEL_URL",
+		},
+		{
+			"webtunnel http url",
+			[]string{"TOR_ROLE=webtunnel", "TOR_NICKNAME=TestWT", "TOR_CONTACT=test@example.com", "TOR_WEBTUNNEL_URL=http://example.com/secret"},
+			"must be an https URL with a host",
+		},
+		{
+			"webtunnel url without host",
+			[]string{"TOR_ROLE=webtunnel", "TOR_NICKNAME=TestWT", "TOR_CONTACT=test@example.com", "TOR_WEBTUNNEL_URL=https:///secret"},
+			"must be an https URL with a host",
+		},
+		{
+			"webtunnel url without path",
+			[]string{"TOR_ROLE=webtunnel", "TOR_NICKNAME=TestWT", "TOR_CONTACT=test@example.com", "TOR_WEBTUNNEL_URL=https://example.com/"},
+			"must include a secret path",
+		},
+		{
+			"webtunnel url with whitespace",
+			[]string{"TOR_ROLE=webtunnel", "TOR_NICKNAME=TestWT", "TOR_CONTACT=test@example.com", "TOR_WEBTUNNEL_URL=https://example.com/a b"},
+			"must not contain whitespace",
+		},
+		{
+			"webtunnel listen without port",
+			[]string{"TOR_ROLE=webtunnel", "TOR_NICKNAME=TestWT", "TOR_CONTACT=test@example.com", "TOR_WEBTUNNEL_URL=https://example.com/secret", "TOR_WEBTUNNEL_LISTEN=127.0.0.1"},
+			`TOR_WEBTUNNEL_LISTEN "127.0.0.1" must be host:port`,
+		},
+		{
+			"webtunnel listen port high",
+			[]string{"TOR_ROLE=webtunnel", "TOR_NICKNAME=TestWT", "TOR_CONTACT=test@example.com", "TOR_WEBTUNNEL_URL=https://example.com/secret", "TOR_WEBTUNNEL_LISTEN=127.0.0.1:70000"},
+			`TOR_WEBTUNNEL_LISTEN port "70000" must be between 1 and 65535`,
+		},
+		{
+			"webtunnel listen port text",
+			[]string{"TOR_ROLE=webtunnel", "TOR_NICKNAME=TestWT", "TOR_CONTACT=test@example.com", "TOR_WEBTUNNEL_URL=https://example.com/secret", "TOR_WEBTUNNEL_LISTEN=127.0.0.1:http"},
+			`TOR_WEBTUNNEL_LISTEN port "http" must be between 1 and 65535`,
 		},
 	}
 

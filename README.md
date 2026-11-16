@@ -2,7 +2,7 @@
 
 Hardened, signed, multi-arch Docker image for Tor relay and bridge operators, published by Unshakled Inc. Tor is compiled from the signed upstream source tarball, never from distro packages.
 
-Status: the middle and exit relay roles, the obfs4 bridge role, family keys, and MyFamily are available now. WebTunnel, the debug variant, and metrics are in progress.
+Status: the middle and exit relay roles, the obfs4 and WebTunnel bridge roles, family keys, and MyFamily are available now. The debug variant and metrics are in progress.
 
 ## What the image provides
 
@@ -13,7 +13,7 @@ Status: the middle and exit relay roles, the obfs4 bridge role, family keys, and
 - `torinit` renders the torrc from environment variables, writes it to `/var/lib/tor/.torinit`, starts tor, forwards signals, and records the PID.
 - Installs family keys from `/run/secrets` and renders `FamilyId` lines.
 - Renders `MyFamily` from an env var, or syncs it from an https URL and reloads tor when the list changes.
-- Ships lyrebird for obfs4 bridges and prints the client bridge line.
+- Ships lyrebird for obfs4 bridges and the webtunnel server for WebTunnel bridges, and prints the client bridge line.
 - Multi-arch images for `linux/amd64`, `linux/arm64`, and `linux/arm/v7`.
 - Keyless cosign signatures, SBOM, and provenance attestations from CI.
 - Images published to `docker.io/unshakled/tor-relay` and `ghcr.io/unshakled-inc/tor-relay`.
@@ -109,9 +109,9 @@ The repository also has `examples/middle/compose.yml`, which uses `tor-relay:dev
 | `middle` | available | `TOR_ROLE=middle`, `TOR_NICKNAME`, `TOR_CONTACT` |
 | `exit` | available | `TOR_ROLE=exit`, `I_UNDERSTAND_EXIT=true`, and `TOR_EXIT_POLICY` or an `ExitPolicy` line in `/etc/tor/torrc.d/*.conf` |
 | `bridge` | available | `TOR_ROLE=bridge`, `TOR_OBFS4_PORT` |
-| `webtunnel` | planned | `TOR_ROLE=webtunnel`, `TOR_WEBTUNNEL_URL` |
+| `webtunnel` | available | `TOR_ROLE=webtunnel`, `TOR_WEBTUNNEL_URL` |
 
-Only `middle`, `exit`, and `bridge` are accepted by the current release. Any other `TOR_ROLE` exits non-zero with a clear message.
+Only `middle`, `exit`, `bridge`, and `webtunnel` are accepted by the current release. Any other `TOR_ROLE` exits non-zero with a clear message.
 
 ## Configuration reference
 
@@ -119,7 +119,7 @@ The current release supports these variables:
 
 | Variable | Required | Default | Rule |
 | --- | --- | --- | --- |
-| `TOR_ROLE` | yes | | `middle`, `exit`, or `bridge` |
+| `TOR_ROLE` | yes | | `middle`, `exit`, `bridge`, or `webtunnel` |
 | `TOR_NICKNAME` | yes | | `^[A-Za-z0-9]{1,19}$` |
 | `TOR_CONTACT` | yes | | Non-empty, single line |
 | `TOR_ORPORT` | no | `9001` | 1 to 65535 |
@@ -139,6 +139,8 @@ The current release supports these variables:
 | `TOR_EXIT_IPV6` | no | `0` | `0` or `1`, renders `IPv6Exit 1` when set |
 | `TOR_OBFS4_PORT` | bridge only | | 1 to 65535, must differ from `TOR_ORPORT` |
 | `TOR_BRIDGE_DISTRIBUTION` | no | `any` | `any`, `none`, `https`, `email`, or `settings` |
+| `TOR_WEBTUNNEL_URL` | webtunnel only | | https URL with a host and a secret path |
+| `TOR_WEBTUNNEL_LISTEN` | no | `127.0.0.1:15000` | host:port for the webtunnel listener |
 
 Any other variable starting with `TOR_` is rejected with an error naming it. This catches typos instead of silently ignoring them.
 
@@ -166,6 +168,8 @@ Sandbox 1
 For `TOR_ROLE=exit`, `ExitRelay 1` replaces `ExitRelay 0`, the middle relay reject policies are not added, and each `TOR_EXIT_POLICY` entry becomes an `ExitPolicy` line. `TOR_EXIT_IPV6=1` adds `IPv6Exit 1`.
 
 For `TOR_ROLE=bridge`, the middle relay reject policies are not added. The torrc adds `BridgeRelay 1`, `ServerTransportPlugin obfs4 exec /usr/local/bin/lyrebird`, `ServerTransportListenAddr obfs4 0.0.0.0:<TOR_OBFS4_PORT>`, `ExtORPort auto`, and `BridgeDistribution <value>`. `TOR_SANDBOX` defaults to `0` for bridges.
+
+For `TOR_ROLE=webtunnel`, the torrc uses the directives from the Tor Project's WebTunnel guide: `BridgeRelay 1`, `ORPort 127.0.0.1:auto`, `AssumeReachable 1`, `ServerTransportPlugin webtunnel exec /usr/local/bin/webtunnel`, `ServerTransportListenAddr webtunnel <TOR_WEBTUNNEL_LISTEN>`, `ServerTransportOptions webtunnel url=<TOR_WEBTUNNEL_URL>`, and `ExtORPort auto`. Relay-only options such as `Address`, bandwidth, `FamilyId`, and `MyFamily` are not rendered for this role. `TOR_SANDBOX` defaults to `0`.
 
 If `/etc/tor/torrc.d/` exists and contains at least one `*.conf` file, torinit appends:
 
@@ -357,6 +361,45 @@ Do not set `MyFamily` on a bridge. Tor's man page recommends it for relays only.
 
 See `examples/bridge/` for a minimal configuration.
 
+## WebTunnel bridge
+
+A WebTunnel bridge imitates ordinary HTTPS browsing. It needs a domain you control, a valid TLS certificate, and a reverse proxy in front. Read the Tor Project's WebTunnel guide before you start:
+
+https://community.torproject.org/relay/setup/webtunnel/
+
+Set the role and the public URL, including the secret path:
+
+```
+TOR_ROLE=webtunnel
+TOR_WEBTUNNEL_URL=https://example.com/secret-path
+```
+
+The torrc uses the directives from the official guide:
+
+```
+BridgeRelay 1
+ORPort 127.0.0.1:auto
+AssumeReachable 1
+ServerTransportPlugin webtunnel exec /usr/local/bin/webtunnel
+ServerTransportListenAddr webtunnel 127.0.0.1:15000
+ServerTransportOptions webtunnel url=https://example.com/secret-path
+ExtORPort auto
+```
+
+`TOR_WEBTUNNEL_LISTEN` defaults to `127.0.0.1:15000`. The reverse proxy must be able to reach it, so host networking is recommended. If the proxy runs in another container, set `TOR_WEBTUNNEL_LISTEN=0.0.0.0:15000` and publish the port.
+
+`TOR_SANDBOX` defaults to `0` for WebTunnel bridges. Tor 0.4.9.17 reports that managed proxies are not compatible with Sandbox mode, so keep it at `0`.
+
+The bridge line has this shape:
+
+```
+webtunnel 10.0.0.2:443 <FINGERPRINT> url=https://example.com/secret-path
+```
+
+`10.0.0.2` is a placeholder address required by the pluggable transport specification. Use the fingerprint from `/var/lib/tor/fingerprint`.
+
+See `examples/webtunnel/` for a compose file and an `nginx.conf.example`.
+
 ## Hardening
 
 The runtime image is intentionally minimal:
@@ -491,14 +534,18 @@ actionlint
 - `TOR_OBFS4_PORT ... must differ from TOR_ORPORT`: pick a different port for obfs4.
 - `bridgeline: read bridge line ...`: tor has not started lyrebird yet, or the data directory does not contain `pt_state/obfs4_bridgeline.txt`. Check that the bridge is running.
 - `bridgeline: read fingerprint ...`: tor has not written `/var/lib/tor/fingerprint` yet. Wait for the first start to finish.
-- `Managed proxies are not compatible with Sandbox mode`: remove `TOR_SANDBOX=1` from an obfs4 bridge. The bridge default is already `0`.
+- `Managed proxies are not compatible with Sandbox mode`: remove `TOR_SANDBOX=1` from an obfs4 or WebTunnel bridge. The bridge default is already `0`.
+- `TOR_ROLE=webtunnel requires TOR_WEBTUNNEL_URL`: add the public https URL, including the secret path, to the env file.
+- `TOR_WEBTUNNEL_URL ... must include a secret path`: use a URL such as `https://example.com/secret-path`, not the bare domain.
+- `TOR_WEBTUNNEL_LISTEN ... must be host:port`: use a value such as `127.0.0.1:15000`.
+- The reverse proxy returns 502: check that the bridge is running, that it listens on the address in `TOR_WEBTUNNEL_LISTEN`, and that the nginx location path matches the path in `TOR_WEBTUNNEL_URL`.
 - The container exits immediately: run `torinit verify` with the same env file. The error message names the invalid variable or value.
 - `exec: "/bin/sh": stat /bin/sh: no such file or directory`: expected. The runtime image has no shell. Use `torinit` subcommands or `docker exec` with the torinit binary.
 - Healthcheck is unhealthy: check the tor log and the PID file at `/var/lib/tor/.torinit/pid`.
 
 ## Roadmap
 
-- Phase 2: WebTunnel, debug variant with nyx, metrics.
+- Phase 2: debug variant with nyx, metrics.
 - Phase 3: systemd migration guide, family keys guide, auto-update guide, security policy, changelog.
 
 ## Security

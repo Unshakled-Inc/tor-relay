@@ -114,6 +114,16 @@ func TestGolden(t *testing.T) {
 			},
 			file: "bridge-none.torrc",
 		},
+		{
+			name: "webtunnel",
+			env: []string{
+				"TOR_ROLE=webtunnel",
+				"TOR_NICKNAME=TestWT",
+				"TOR_CONTACT=test@example.com",
+				"TOR_WEBTUNNEL_URL=https://example.com/secret-path",
+			},
+			file: "webtunnel.torrc",
+		},
 	}
 
 	for _, tc := range tests {
