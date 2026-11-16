@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Unshakled-Inc/tor-relay/internal/config"
@@ -49,6 +50,20 @@ func Render(cfg *config.Config, dataDir string, includeTorrcD bool) string {
 	}
 	for _, id := range cfg.FamilyID {
 		fmt.Fprintf(&b, "FamilyId %s\n", id)
+	}
+	if len(cfg.MyFamily) > 0 {
+		b.WriteString("MyFamily ")
+		for i, fp := range cfg.MyFamily {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			b.WriteString("$")
+			b.WriteString(fp)
+		}
+		b.WriteString("\n")
+	}
+	if cfg.MyFamilyURL != "" {
+		fmt.Fprintf(&b, "%%include %s\n", filepath.Join(dataDir, ".torinit", "family.conf"))
 	}
 	b.WriteString("ExitRelay 0\n")
 	b.WriteString("ExitPolicy reject *:*\n")

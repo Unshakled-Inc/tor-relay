@@ -2,28 +2,35 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const RoleMiddle = "middle"
 
 var nicknameRE = regexp.MustCompile(`^[A-Za-z0-9]{1,19}$`)
 var familyIDRE = regexp.MustCompile(`^[A-Za-z0-9+/]+={0,2}$`)
+var fingerprintRE = regexp.MustCompile(`^[0-9A-Fa-f]{40}$`)
 
 var allowed = map[string]bool{
-	"TOR_ROLE":            true,
-	"TOR_NICKNAME":        true,
-	"TOR_CONTACT":         true,
-	"TOR_ORPORT":          true,
-	"TOR_ADDRESS":         true,
-	"TOR_BANDWIDTH_RATE":  true,
-	"TOR_BANDWIDTH_BURST": true,
-	"TOR_SANDBOX":         true,
-	"TOR_LOG_LEVEL":       true,
-	"TOR_FAMILY_ID":       true,
-	"TOR_FAMILY_KEY_DIR":  true,
+	"TOR_ROLE":                  true,
+	"TOR_NICKNAME":              true,
+	"TOR_CONTACT":               true,
+	"TOR_ORPORT":                true,
+	"TOR_ADDRESS":               true,
+	"TOR_BANDWIDTH_RATE":        true,
+	"TOR_BANDWIDTH_BURST":       true,
+	"TOR_SANDBOX":               true,
+	"TOR_LOG_LEVEL":             true,
+	"TOR_FAMILY_ID":             true,
+	"TOR_FAMILY_KEY_DIR":        true,
+	"TOR_MYFAMILY":              true,
+	"TOR_MYFAMILY_URL":          true,
+	"TOR_MYFAMILY_REFRESH":      true,
+	"TOR_MYFAMILY_MAX_DROP_PCT": true,
 }
 
 var logLevels = map[string]bool{
@@ -36,17 +43,21 @@ var logLevels = map[string]bool{
 
 // Config is the validated torinit configuration for v0.
 type Config struct {
-	Role           string
-	Nickname       string
-	Contact        string
-	ORPort         int
-	Address        string
-	BandwidthRate  string
-	BandwidthBurst string
-	Sandbox        bool
-	LogLevel       string
-	FamilyID       []string
-	FamilyKeyDir   string
+	Role               string
+	Nickname           string
+	Contact            string
+	ORPort             int
+	Address            string
+	BandwidthRate      string
+	BandwidthBurst     string
+	Sandbox            bool
+	LogLevel           string
+	FamilyID           []string
+	FamilyKeyDir       string
+	MyFamily           []string
+	MyFamilyURL        string
+	MyFamilyRefresh    time.Duration
+	MyFamilyMaxDropPct int
 }
 
 // Load parses and validates a list of KEY=VALUE environment entries.
@@ -154,17 +165,77 @@ func Load(environ []string) (*Config, error) {
 		familyKeyDir = value
 	}
 
+	myFamily := []string{}
+	if value := values["TOR_MYFAMILY"]; value != "" {
+		if strings.ContainsAny(value, "\r\n") {
+			return nil, fmt.Errorf("TOR_MYFAMILY must be a single line")
+		}
+		for _, entry := range strings.Split(value, ",") {
+			entry = strings.TrimSpace(entry)
+			entry = strings.TrimPrefix(entry, "$")
+			if !fingerprintRE.MatchString(entry) {
+				return nil, fmt.Errorf("TOR_MYFAMILY entry %q must be a 40-hex fingerprint", entry)
+			}
+			myFamily = append(myFamily, strings.ToUpper(entry))
+		}
+	}
+
+	myFamilyURL := values["TOR_MYFAMILY_URL"]
+	if myFamilyURL != "" {
+		if strings.ContainsAny(myFamilyURL, "\r\n") {
+			return nil, fmt.Errorf("TOR_MYFAMILY_URL must be a single line")
+		}
+		parsed, err := url.Parse(myFamilyURL)
+		if err != nil {
+			return nil, fmt.Errorf("TOR_MYFAMILY_URL %q is not a URL: %v", myFamilyURL, err)
+		}
+		if parsed.Scheme != "https" || parsed.Host == "" {
+			return nil, fmt.Errorf("TOR_MYFAMILY_URL %q must be an https URL with a host", myFamilyURL)
+		}
+	}
+	if len(myFamily) > 0 && myFamilyURL != "" {
+		return nil, fmt.Errorf("TOR_MYFAMILY and TOR_MYFAMILY_URL cannot both be set")
+	}
+
+	myFamilyRefresh := time.Hour
+	if value := values["TOR_MYFAMILY_REFRESH"]; value != "" {
+		d, err := time.ParseDuration(value)
+		if err != nil {
+			return nil, fmt.Errorf("TOR_MYFAMILY_REFRESH %q is not a duration", value)
+		}
+		if d < 10*time.Minute {
+			return nil, fmt.Errorf("TOR_MYFAMILY_REFRESH %s must be at least 10m", d)
+		}
+		myFamilyRefresh = d
+	}
+
+	myFamilyMaxDropPct := 20
+	if value := values["TOR_MYFAMILY_MAX_DROP_PCT"]; value != "" {
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, fmt.Errorf("TOR_MYFAMILY_MAX_DROP_PCT %q is not a number", value)
+		}
+		if n < 0 || n > 100 {
+			return nil, fmt.Errorf("TOR_MYFAMILY_MAX_DROP_PCT %d must be between 0 and 100", n)
+		}
+		myFamilyMaxDropPct = n
+	}
+
 	return &Config{
-		Role:           role,
-		Nickname:       nickname,
-		Contact:        contact,
-		ORPort:         port,
-		Address:        address,
-		BandwidthRate:  rate,
-		BandwidthBurst: burst,
-		Sandbox:        sandbox,
-		LogLevel:       logLevel,
-		FamilyID:       familyID,
-		FamilyKeyDir:   familyKeyDir,
+		Role:               role,
+		Nickname:           nickname,
+		Contact:            contact,
+		ORPort:             port,
+		Address:            address,
+		BandwidthRate:      rate,
+		BandwidthBurst:     burst,
+		Sandbox:            sandbox,
+		LogLevel:           logLevel,
+		FamilyID:           familyID,
+		FamilyKeyDir:       familyKeyDir,
+		MyFamily:           myFamily,
+		MyFamilyURL:        myFamilyURL,
+		MyFamilyRefresh:    myFamilyRefresh,
+		MyFamilyMaxDropPct: myFamilyMaxDropPct,
 	}, nil
 }

@@ -2,7 +2,7 @@
 
 Hardened, signed, multi-arch Docker image for Tor relay and bridge operators, published by Unshakled Inc. Tor is compiled from the signed upstream source tarball, never from distro packages.
 
-Status: the middle relay role and family keys are available now. Exit, obfs4 bridge, WebTunnel, the debug variant, and metrics are in progress.
+Status: the middle relay role, family keys, and MyFamily are available now. Exit, obfs4 bridge, WebTunnel, the debug variant, and metrics are in progress.
 
 ## What the image provides
 
@@ -12,6 +12,7 @@ Status: the middle relay role and family keys are available now. Exit, obfs4 bri
 - Works with all Linux capabilities dropped and `no-new-privileges`.
 - `torinit` renders the torrc from environment variables, writes it to `/var/lib/tor/.torinit`, starts tor, forwards signals, and records the PID.
 - Installs family keys from `/run/secrets` and renders `FamilyId` lines.
+- Renders `MyFamily` from an env var, or syncs it from an https URL and reloads tor when the list changes.
 - Multi-arch images for `linux/amd64`, `linux/arm64`, and `linux/arm/v7`.
 - Keyless cosign signatures, SBOM, and provenance attestations from CI.
 - Images published to `docker.io/unshakled/tor-relay` and `ghcr.io/unshakled-inc/tor-relay`.
@@ -128,6 +129,10 @@ The current release supports these variables:
 | `TOR_LOG_LEVEL` | no | `notice` | `debug`, `info`, `notice`, `warn`, or `err` |
 | `TOR_FAMILY_ID` | no | | One or more space-separated family IDs from `keygen-family` |
 | `TOR_FAMILY_KEY_DIR` | no | `/run/secrets` | Directory containing family key files |
+| `TOR_MYFAMILY` | no | | Comma-separated 40-hex fingerprints, optional `$` prefix |
+| `TOR_MYFAMILY_URL` | no | | https URL to a fingerprint list, one per line |
+| `TOR_MYFAMILY_REFRESH` | no | `1h` | Refresh interval, minimum `10m` |
+| `TOR_MYFAMILY_MAX_DROP_PCT` | no | `20` | 0 to 100, maximum percent of entries that may disappear in one update |
 
 Any other variable starting with `TOR_` is rejected with an error naming it. This catches typos instead of silently ignoring them.
 
@@ -159,6 +164,20 @@ If `/etc/tor/torrc.d/` exists and contains at least one `*.conf` file, torinit a
 ```
 
 Use that directory for operator-specific torrc options. Keep the generated file at `/var/lib/tor/.torinit/torrc` untouched.
+
+If `TOR_MYFAMILY` is set, the torrc contains a single line listing the fingerprints, for example:
+
+```
+MyFamily $0123456789ABCDEF0123456789ABCDEF01234567,$89ABCDEF0123456789ABCDEF0123456789ABCDEF
+```
+
+If `TOR_MYFAMILY_URL` is set, the torrc contains:
+
+```
+%include /var/lib/tor/.torinit/family.conf
+```
+
+`torinit` keeps that file in sync and reloads tor when its content changes.
 
 ### torinit subcommands
 
@@ -229,6 +248,39 @@ The secret is mounted at `/run/secrets/myfamily`. `torinit` installs it as `myfa
 If `TOR_FAMILY_ID` is set and no key file is found, the container exits with an error. If a key file is present and `TOR_FAMILY_ID` is not set, it also exits with an error. This prevents a relay from silently losing its family membership.
 
 The `.public_family_id` file is not a secret. Keep it with the key file for reference and for publishing the ID to other operators.
+
+## MyFamily
+
+`MyFamily` tells tor which other relays belong to your family. You can set it directly or sync it from a URL.
+
+Direct mode, in the env file:
+
+```
+TOR_MYFAMILY=$0123456789ABCDEF0123456789ABCDEF01234567,$89ABCDEF0123456789ABCDEF0123456789ABCDEF
+```
+
+The value is a comma-separated list of 40-hex fingerprints. A leading `$` is optional on each entry. `torinit` normalizes the fingerprints to upper case and renders one `MyFamily` line.
+
+URL mode, in the env file:
+
+```
+TOR_MYFAMILY_URL=https://example.com/family.txt
+TOR_MYFAMILY_REFRESH=1h
+TOR_MYFAMILY_MAX_DROP_PCT=20
+```
+
+The URL must be https. The file contains one 40-hex fingerprint per line. Blank lines and `#` comments are ignored, and a leading `$` is optional. Setting both `TOR_MYFAMILY` and `TOR_MYFAMILY_URL` is an error.
+
+In URL mode:
+
+- `torinit` fetches the list at startup with a 15 second timeout. Redirects to http are refused.
+- It writes `/var/lib/tor/.torinit/family.conf` atomically and excludes this relay's own fingerprint when `/var/lib/tor/fingerprint` exists.
+- If the startup fetch fails, an existing `family.conf` is kept. If there is none, an empty file is written. Tor always starts, and the failure is logged.
+- A background loop refetches every `TOR_MYFAMILY_REFRESH` (minimum `10m`).
+- An update is rejected when the response does not parse, when it is empty while the current list is not, or when it drops more than `TOR_MYFAMILY_MAX_DROP_PCT` percent of the current entries. The old file is kept and the reason is logged.
+- When the content changes, `family.conf` is rewritten and tor receives `SIGHUP`, which reloads the family list.
+
+Do not set `MyFamily` on a bridge. Tor's man page recommends it for relays only, because listing other relays would reveal them.
 
 ## Hardening
 
@@ -355,13 +407,16 @@ actionlint
 - `Permission denied` on `/var/lib/tor`: the volume must be writable by UID/GID 65532. Fix ownership on the host before starting the container.
 - `FamilyId set but no *.secret_family_key found in /run/secrets`: mount the family key as a Docker secret, or set `TOR_FAMILY_KEY_DIR` to the directory that contains it.
 - `family key present but TOR_FAMILY_ID not set`: add `TOR_FAMILY_ID` to the env file with the ID printed by `keygen-family`.
+- `TOR_MYFAMILY and TOR_MYFAMILY_URL cannot both be set`: pick direct mode or URL mode, not both.
+- `myfamily: startup fetch failed`: tor still starts. Check the URL, DNS, and outbound https access. An existing `family.conf` is kept; otherwise the file is empty until the next successful refresh.
+- `myfamily: refresh failed: refusing update`: the fetched list was empty or dropped too many entries. Check the file at `TOR_MYFAMILY_URL`. Raise `TOR_MYFAMILY_MAX_DROP_PCT` only if the drop is intentional.
 - The container exits immediately: run `torinit verify` with the same env file. The error message names the invalid variable or value.
 - `exec: "/bin/sh": stat /bin/sh: no such file or directory`: expected. The runtime image has no shell. Use `torinit` subcommands or `docker exec` with the torinit binary.
 - Healthcheck is unhealthy: check the tor log and the PID file at `/var/lib/tor/.torinit/pid`.
 
 ## Roadmap
 
-- Phase 2: exit role, obfs4 bridge with lyrebird, WebTunnel, MyFamily sync, debug variant with nyx, metrics.
+- Phase 2: exit role, obfs4 bridge with lyrebird, WebTunnel, debug variant with nyx, metrics.
 - Phase 3: systemd migration guide, family keys guide, auto-update guide, security policy, changelog.
 
 ## Security

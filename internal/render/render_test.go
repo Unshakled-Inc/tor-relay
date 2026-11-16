@@ -49,6 +49,26 @@ func TestGolden(t *testing.T) {
 			},
 			file: "middle-family.torrc",
 		},
+		{
+			name: "middle myfamily",
+			env: []string{
+				"TOR_ROLE=middle",
+				"TOR_NICKNAME=TestRelay",
+				"TOR_CONTACT=test@example.com",
+				"TOR_MYFAMILY=$0123456789ABCDEF0123456789ABCDEF01234567,$89ABCDEF0123456789ABCDEF0123456789ABCDEF",
+			},
+			file: "middle-myfamily.torrc",
+		},
+		{
+			name: "middle myfamily url",
+			env: []string{
+				"TOR_ROLE=middle",
+				"TOR_NICKNAME=TestRelay",
+				"TOR_CONTACT=test@example.com",
+				"TOR_MYFAMILY_URL=https://example.com/family.txt",
+			},
+			file: "middle-myfamily-url.torrc",
+		},
 	}
 
 	for _, tc := range tests {
@@ -66,6 +86,47 @@ func TestGolden(t *testing.T) {
 				t.Errorf("rendered torrc mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
 			}
 		})
+	}
+}
+
+func TestRenderMyFamilyIncludeUsesDataDir(t *testing.T) {
+	cfg, err := config.Load([]string{
+		"TOR_ROLE=middle",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+		"TOR_MYFAMILY_URL=https://example.com/family.txt",
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := Render(cfg, "/tmp/verify/data", false)
+	if !strings.Contains(got, "%include /tmp/verify/data/.torinit/family.conf\n") {
+		t.Fatalf("include does not follow dataDir:\n%s", got)
+	}
+	if strings.Contains(got, "MyFamily ") {
+		t.Fatalf("URL mode rendered a static MyFamily line:\n%s", got)
+	}
+}
+
+func TestRenderMyFamilyStatic(t *testing.T) {
+	cfg, err := config.Load([]string{
+		"TOR_ROLE=middle",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+		"TOR_MYFAMILY=0123456789ABCDEF0123456789ABCDEF01234567",
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := Render(cfg, "/var/lib/tor", false)
+	if strings.Count(got, "MyFamily ") != 1 {
+		t.Fatalf("want exactly one MyFamily line:\n%s", got)
+	}
+	if !strings.Contains(got, "MyFamily $0123456789ABCDEF0123456789ABCDEF01234567\n") {
+		t.Fatalf("missing MyFamily line:\n%s", got)
+	}
+	if strings.Contains(got, "%include /var/lib/tor/.torinit/family.conf") {
+		t.Fatalf("static mode rendered the family include:\n%s", got)
 	}
 }
 

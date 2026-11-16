@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Unshakled-Inc/tor-relay/internal/config"
+	"github.com/Unshakled-Inc/tor-relay/internal/family"
 	"github.com/Unshakled-Inc/tor-relay/internal/keys"
 	"github.com/Unshakled-Inc/tor-relay/internal/render"
 	"github.com/Unshakled-Inc/tor-relay/internal/supervise"
@@ -108,6 +109,12 @@ func verifyCmd(args []string) int {
 		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
 		return 1
 	}
+	if cfg.MyFamilyURL != "" {
+		if err := family.Write(filepath.Join(verifyData, ".torinit", "family.conf"), nil); err != nil {
+			fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
+			return 1
+		}
+	}
 
 	torrcPath := filepath.Join(tmp, "torrc")
 	defaultsPath := filepath.Join(tmp, "defaults")
@@ -165,6 +172,18 @@ func runCmd() int {
 		fmt.Fprintf(os.Stderr, "torinit: replaced family key %s\n", name)
 	}
 
+	var fam *family.Manager
+	if cfg.MyFamilyURL != "" {
+		fam = family.New(family.Options{
+			URL:             cfg.MyFamilyURL,
+			Interval:        cfg.MyFamilyRefresh,
+			MaxDropPct:      cfg.MyFamilyMaxDropPct,
+			Path:            filepath.Join(stateDir, "family.conf"),
+			FingerprintPath: filepath.Join(dataDir, "fingerprint"),
+		})
+		fam.Startup()
+	}
+
 	torrcPath := filepath.Join(stateDir, "torrc")
 	defaultsPath := filepath.Join(stateDir, "defaults")
 	if err := os.WriteFile(torrcPath, []byte(render.Render(cfg, dataDir, render.IncludeTorrcD(render.TorrcD))), 0600); err != nil {
@@ -180,7 +199,13 @@ func runCmd() int {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	code, err := supervise.Run(cmd, filepath.Join(stateDir, "pid"))
+	stop := make(chan struct{})
+	code, err := supervise.Run(cmd, filepath.Join(stateDir, "pid"), func(pid int) {
+		if fam != nil {
+			go fam.Loop(pid, stop)
+		}
+	})
+	close(stop)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
 		return 1

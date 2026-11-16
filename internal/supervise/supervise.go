@@ -10,10 +10,11 @@ import (
 	"syscall"
 )
 
-// Run starts cmd, records its PID, forwards termination and reload signals,
-// and returns the child's exit code. A signaled child is reported as
-// 128+signal, matching shell conventions.
-func Run(cmd *exec.Cmd, pidPath string) (int, error) {
+// Run starts cmd, records its PID, calls onStart with the PID when it is not
+// nil, forwards termination and reload signals, and returns the child's exit
+// code. A signaled child is reported as 128+signal, matching shell
+// conventions.
+func Run(cmd *exec.Cmd, pidPath string, onStart func(pid int)) (int, error) {
 	if err := cmd.Start(); err != nil {
 		return 1, fmt.Errorf("start tor: %w", err)
 	}
@@ -22,6 +23,10 @@ func Run(cmd *exec.Cmd, pidPath string) (int, error) {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
 		return 1, fmt.Errorf("write pid file: %w", err)
+	}
+
+	if onStart != nil {
+		onStart(cmd.Process.Pid)
 	}
 
 	signals := make(chan os.Signal, 4)

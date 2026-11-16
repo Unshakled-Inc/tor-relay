@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadValid(t *testing.T) {
@@ -52,6 +53,18 @@ func TestLoadDefaults(t *testing.T) {
 	if len(cfg.FamilyID) != 0 {
 		t.Errorf("FamilyID = %v, want empty", cfg.FamilyID)
 	}
+	if len(cfg.MyFamily) != 0 {
+		t.Errorf("MyFamily = %v, want empty", cfg.MyFamily)
+	}
+	if cfg.MyFamilyURL != "" {
+		t.Errorf("MyFamilyURL = %q, want empty", cfg.MyFamilyURL)
+	}
+	if cfg.MyFamilyRefresh != time.Hour {
+		t.Errorf("MyFamilyRefresh = %s, want 1h", cfg.MyFamilyRefresh)
+	}
+	if cfg.MyFamilyMaxDropPct != 20 {
+		t.Errorf("MyFamilyMaxDropPct = %d, want 20", cfg.MyFamilyMaxDropPct)
+	}
 }
 
 func TestLoadFamily(t *testing.T) {
@@ -70,6 +83,54 @@ func TestLoadFamily(t *testing.T) {
 	}
 	if cfg.FamilyKeyDir != "/run/secrets" {
 		t.Errorf("FamilyKeyDir = %q, want /run/secrets", cfg.FamilyKeyDir)
+	}
+}
+
+func TestLoadMyFamily(t *testing.T) {
+	cfg, err := Load([]string{
+		"TOR_ROLE=middle",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+		"TOR_MYFAMILY=$0123456789abcdef0123456789abcdef01234567,89ABCDEF0123456789ABCDEF0123456789ABCDEF",
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := []string{
+		"0123456789ABCDEF0123456789ABCDEF01234567",
+		"89ABCDEF0123456789ABCDEF0123456789ABCDEF",
+	}
+	if len(cfg.MyFamily) != 2 || cfg.MyFamily[0] != want[0] || cfg.MyFamily[1] != want[1] {
+		t.Errorf("MyFamily = %v, want %v", cfg.MyFamily, want)
+	}
+	if cfg.MyFamilyURL != "" {
+		t.Errorf("MyFamilyURL = %q, want empty", cfg.MyFamilyURL)
+	}
+}
+
+func TestLoadMyFamilyURL(t *testing.T) {
+	cfg, err := Load([]string{
+		"TOR_ROLE=middle",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+		"TOR_MYFAMILY_URL=https://example.com/family.txt",
+		"TOR_MYFAMILY_REFRESH=30m",
+		"TOR_MYFAMILY_MAX_DROP_PCT=0",
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.MyFamilyURL != "https://example.com/family.txt" {
+		t.Errorf("MyFamilyURL = %q", cfg.MyFamilyURL)
+	}
+	if len(cfg.MyFamily) != 0 {
+		t.Errorf("MyFamily = %v, want empty", cfg.MyFamily)
+	}
+	if cfg.MyFamilyRefresh != 30*time.Minute {
+		t.Errorf("MyFamilyRefresh = %s, want 30m", cfg.MyFamilyRefresh)
+	}
+	if cfg.MyFamilyMaxDropPct != 0 {
+		t.Errorf("MyFamilyMaxDropPct = %d, want 0", cfg.MyFamilyMaxDropPct)
 	}
 }
 
@@ -108,6 +169,46 @@ func TestLoadRejects(t *testing.T) {
 			"multiline family key dir",
 			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_FAMILY_KEY_DIR=/run\nsecrets"},
 			"TOR_FAMILY_KEY_DIR must be a single line",
+		},
+		{
+			"bad myfamily fingerprint",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_MYFAMILY=$0123456789ABCDEF"},
+			`TOR_MYFAMILY entry "0123456789ABCDEF" must be a 40-hex fingerprint`,
+		},
+		{
+			"myfamily and url together",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_MYFAMILY=0123456789ABCDEF0123456789ABCDEF01234567", "TOR_MYFAMILY_URL=https://example.com/family.txt"},
+			"TOR_MYFAMILY and TOR_MYFAMILY_URL cannot both be set",
+		},
+		{
+			"http myfamily url",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_MYFAMILY_URL=http://example.com/family.txt"},
+			"must be an https URL with a host",
+		},
+		{
+			"myfamily url without host",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_MYFAMILY_URL=https:///family.txt"},
+			"must be an https URL with a host",
+		},
+		{
+			"myfamily refresh too short",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_MYFAMILY_URL=https://example.com/family.txt", "TOR_MYFAMILY_REFRESH=5m"},
+			"TOR_MYFAMILY_REFRESH 5m0s must be at least 10m",
+		},
+		{
+			"myfamily refresh not a duration",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_MYFAMILY_URL=https://example.com/family.txt", "TOR_MYFAMILY_REFRESH=soon"},
+			`TOR_MYFAMILY_REFRESH "soon" is not a duration`,
+		},
+		{
+			"myfamily drop pct high",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_MYFAMILY_URL=https://example.com/family.txt", "TOR_MYFAMILY_MAX_DROP_PCT=101"},
+			"TOR_MYFAMILY_MAX_DROP_PCT 101 must be between 0 and 100",
+		},
+		{
+			"myfamily drop pct text",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_MYFAMILY_URL=https://example.com/family.txt", "TOR_MYFAMILY_MAX_DROP_PCT=lots"},
+			`TOR_MYFAMILY_MAX_DROP_PCT "lots" is not a number`,
 		},
 	}
 
