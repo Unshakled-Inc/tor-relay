@@ -2,7 +2,7 @@
 
 Hardened, signed, multi-arch Docker image for Tor relay and bridge operators, published by Unshakled Inc. Tor is compiled from the signed upstream source tarball, never from distro packages.
 
-Status: the middle and exit relay roles, family keys, and MyFamily are available now. obfs4 bridge, WebTunnel, the debug variant, and metrics are in progress.
+Status: the middle and exit relay roles, the obfs4 bridge role, family keys, and MyFamily are available now. WebTunnel, the debug variant, and metrics are in progress.
 
 ## What the image provides
 
@@ -13,6 +13,7 @@ Status: the middle and exit relay roles, family keys, and MyFamily are available
 - `torinit` renders the torrc from environment variables, writes it to `/var/lib/tor/.torinit`, starts tor, forwards signals, and records the PID.
 - Installs family keys from `/run/secrets` and renders `FamilyId` lines.
 - Renders `MyFamily` from an env var, or syncs it from an https URL and reloads tor when the list changes.
+- Ships lyrebird for obfs4 bridges and prints the client bridge line.
 - Multi-arch images for `linux/amd64`, `linux/arm64`, and `linux/arm/v7`.
 - Keyless cosign signatures, SBOM, and provenance attestations from CI.
 - Images published to `docker.io/unshakled/tor-relay` and `ghcr.io/unshakled-inc/tor-relay`.
@@ -107,10 +108,10 @@ The repository also has `examples/middle/compose.yml`, which uses `tor-relay:dev
 | --- | --- | --- |
 | `middle` | available | `TOR_ROLE=middle`, `TOR_NICKNAME`, `TOR_CONTACT` |
 | `exit` | available | `TOR_ROLE=exit`, `I_UNDERSTAND_EXIT=true`, and `TOR_EXIT_POLICY` or an `ExitPolicy` line in `/etc/tor/torrc.d/*.conf` |
-| `bridge` | planned | `TOR_ROLE=bridge`, `TOR_OBFS4_PORT` |
+| `bridge` | available | `TOR_ROLE=bridge`, `TOR_OBFS4_PORT` |
 | `webtunnel` | planned | `TOR_ROLE=webtunnel`, `TOR_WEBTUNNEL_URL` |
 
-Only `middle` and `exit` are accepted by the current release. Any other `TOR_ROLE` exits non-zero with a clear message.
+Only `middle`, `exit`, and `bridge` are accepted by the current release. Any other `TOR_ROLE` exits non-zero with a clear message.
 
 ## Configuration reference
 
@@ -118,7 +119,7 @@ The current release supports these variables:
 
 | Variable | Required | Default | Rule |
 | --- | --- | --- | --- |
-| `TOR_ROLE` | yes | | `middle` or `exit` |
+| `TOR_ROLE` | yes | | `middle`, `exit`, or `bridge` |
 | `TOR_NICKNAME` | yes | | `^[A-Za-z0-9]{1,19}$` |
 | `TOR_CONTACT` | yes | | Non-empty, single line |
 | `TOR_ORPORT` | no | `9001` | 1 to 65535 |
@@ -136,6 +137,8 @@ The current release supports these variables:
 | `I_UNDERSTAND_EXIT` | exit only | | Must be exactly `true` |
 | `TOR_EXIT_POLICY` | exit, unless set in `torrc.d` | | Semicolon-separated exit policy entries, rendered as `ExitPolicy` lines |
 | `TOR_EXIT_IPV6` | no | `0` | `0` or `1`, renders `IPv6Exit 1` when set |
+| `TOR_OBFS4_PORT` | bridge only | | 1 to 65535, must differ from `TOR_ORPORT` |
+| `TOR_BRIDGE_DISTRIBUTION` | no | `any` | `any`, `none`, `https`, `email`, or `settings` |
 
 Any other variable starting with `TOR_` is rejected with an error naming it. This catches typos instead of silently ignoring them.
 
@@ -161,6 +164,8 @@ Sandbox 1
 ```
 
 For `TOR_ROLE=exit`, `ExitRelay 1` replaces `ExitRelay 0`, the middle relay reject policies are not added, and each `TOR_EXIT_POLICY` entry becomes an `ExitPolicy` line. `TOR_EXIT_IPV6=1` adds `IPv6Exit 1`.
+
+For `TOR_ROLE=bridge`, the middle relay reject policies are not added. The torrc adds `BridgeRelay 1`, `ServerTransportPlugin obfs4 exec /usr/local/bin/lyrebird`, `ServerTransportListenAddr obfs4 0.0.0.0:<TOR_OBFS4_PORT>`, `ExtORPort auto`, and `BridgeDistribution <value>`. `TOR_SANDBOX` defaults to `0` for bridges.
 
 If `/etc/tor/torrc.d/` exists and contains at least one `*.conf` file, torinit appends:
 
@@ -194,6 +199,7 @@ The image entrypoint is `torinit`. The current subcommands are:
 - `version`: print the torinit version and run `tor --version`.
 - `healthcheck`: read the PID file and exit 0 only if `/proc/<pid>` exists.
 - `keygen-family`: generate a family key in `/out` or the directory given by `--out`, print the `FamilyId` line, and refuse to overwrite an existing key unless `--force` is set.
+- `bridgeline`: print the obfs4 client bridge line from `/var/lib/tor/pt_state/obfs4_bridgeline.txt`, with the fingerprint filled in from `/var/lib/tor/fingerprint`.
 
 Examples:
 
@@ -311,6 +317,45 @@ The image does not add a default exit policy. If `TOR_EXIT_POLICY` is empty, `to
 `TOR_EXIT_IPV6=1` adds `IPv6Exit 1`.
 
 See `examples/exit/` for a minimal configuration.
+
+## obfs4 bridge
+
+An obfs4 bridge helps censored users reach the Tor network. Read the Tor Project's bridge guide before you start:
+
+https://community.torproject.org/relay/setup/bridge/
+
+Set the role and the obfs4 port:
+
+```
+TOR_ROLE=bridge
+TOR_OBFS4_PORT=8443
+```
+
+Both the ORPort and the obfs4 port must be reachable from the internet, and the ports must differ. The image ships lyrebird and renders:
+
+```
+BridgeRelay 1
+ServerTransportPlugin obfs4 exec /usr/local/bin/lyrebird
+ServerTransportListenAddr obfs4 0.0.0.0:<port>
+ExtORPort auto
+BridgeDistribution <distribution>
+```
+
+`TOR_BRIDGE_DISTRIBUTION` defaults to `any`. The recognized values are `any`, `none`, `https`, `email`, and `settings`.
+
+`TOR_SANDBOX` defaults to `0` for bridges. Tor 0.4.9.17 reports that managed proxies are not compatible with Sandbox mode, so obfs4 bridges must keep it at `0`.
+
+After tor starts, print the client bridge line:
+
+```
+docker compose exec tor-relay /usr/local/bin/torinit bridgeline
+```
+
+Set `TOR_ADDRESS` to fill in the public IP address and obfs4 port. Otherwise the `<IP ADDRESS>:<PORT>` placeholder remains for you to replace.
+
+Do not set `MyFamily` on a bridge. Tor's man page recommends it for relays only.
+
+See `examples/bridge/` for a minimal configuration.
 
 ## Hardening
 
@@ -442,13 +487,18 @@ actionlint
 - `myfamily: refresh failed: refusing update`: the fetched list was empty or dropped too many entries. Check the file at `TOR_MYFAMILY_URL`. Raise `TOR_MYFAMILY_MAX_DROP_PCT` only if the drop is intentional.
 - `TOR_ROLE=exit requires I_UNDERSTAND_EXIT=true`: set `I_UNDERSTAND_EXIT=true` in the env file. The value must be exactly `true`.
 - `TOR_ROLE=exit requires TOR_EXIT_POLICY or an ExitPolicy line in /etc/tor/torrc.d/*.conf`: add an exit policy to the env file or to a `*.conf` file in the torrc.d directory.
+- `TOR_ROLE=bridge requires TOR_OBFS4_PORT`: add the obfs4 port to the env file.
+- `TOR_OBFS4_PORT ... must differ from TOR_ORPORT`: pick a different port for obfs4.
+- `bridgeline: read bridge line ...`: tor has not started lyrebird yet, or the data directory does not contain `pt_state/obfs4_bridgeline.txt`. Check that the bridge is running.
+- `bridgeline: read fingerprint ...`: tor has not written `/var/lib/tor/fingerprint` yet. Wait for the first start to finish.
+- `Managed proxies are not compatible with Sandbox mode`: remove `TOR_SANDBOX=1` from an obfs4 bridge. The bridge default is already `0`.
 - The container exits immediately: run `torinit verify` with the same env file. The error message names the invalid variable or value.
 - `exec: "/bin/sh": stat /bin/sh: no such file or directory`: expected. The runtime image has no shell. Use `torinit` subcommands or `docker exec` with the torinit binary.
 - Healthcheck is unhealthy: check the tor log and the PID file at `/var/lib/tor/.torinit/pid`.
 
 ## Roadmap
 
-- Phase 2: obfs4 bridge with lyrebird, WebTunnel, debug variant with nyx, metrics.
+- Phase 2: WebTunnel, debug variant with nyx, metrics.
 - Phase 3: systemd migration guide, family keys guide, auto-update guide, security policy, changelog.
 
 ## Security

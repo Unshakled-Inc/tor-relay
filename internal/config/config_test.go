@@ -179,6 +179,48 @@ func TestLoadExit(t *testing.T) {
 	}
 }
 
+func TestLoadBridge(t *testing.T) {
+	cfg, err := Load([]string{
+		"TOR_ROLE=bridge",
+		"TOR_NICKNAME=TestBridge",
+		"TOR_CONTACT=test@example.com",
+		"TOR_OBFS4_PORT=8443",
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Role != RoleBridge {
+		t.Errorf("Role = %q, want bridge", cfg.Role)
+	}
+	if cfg.Obfs4Port != 8443 {
+		t.Errorf("Obfs4Port = %d, want 8443", cfg.Obfs4Port)
+	}
+	if cfg.BridgeDistribution != "any" {
+		t.Errorf("BridgeDistribution = %q, want any", cfg.BridgeDistribution)
+	}
+	if cfg.Sandbox {
+		t.Error("Sandbox = true, want false by default for a bridge")
+	}
+
+	override, err := Load([]string{
+		"TOR_ROLE=bridge",
+		"TOR_NICKNAME=TestBridge",
+		"TOR_CONTACT=test@example.com",
+		"TOR_OBFS4_PORT=8443",
+		"TOR_BRIDGE_DISTRIBUTION=NONE",
+		"TOR_SANDBOX=1",
+	})
+	if err != nil {
+		t.Fatalf("Load override: %v", err)
+	}
+	if override.BridgeDistribution != "none" {
+		t.Errorf("BridgeDistribution = %q, want none", override.BridgeDistribution)
+	}
+	if !override.Sandbox {
+		t.Error("Sandbox = false, want true when explicitly set")
+	}
+}
+
 func TestValidateExitPolicy(t *testing.T) {
 	dir := t.TempDir()
 
@@ -241,7 +283,7 @@ func TestLoadRejects(t *testing.T) {
 		want string
 	}{
 		{"missing role", []string{"TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com"}, "TOR_ROLE is required"},
-		{"bad role", append(base[:0:0], "TOR_ROLE=bridge", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com"), `TOR_ROLE "bridge" is not supported`},
+		{"bad role", append(base[:0:0], "TOR_ROLE=webtunnel", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com"), `TOR_ROLE "webtunnel" is not supported`},
 		{"missing nickname", []string{"TOR_ROLE=middle", "TOR_CONTACT=test@example.com"}, "TOR_NICKNAME is required"},
 		{"empty nickname", []string{"TOR_ROLE=middle", "TOR_NICKNAME=", "TOR_CONTACT=test@example.com"}, "TOR_NICKNAME is required"},
 		{"long nickname", []string{"TOR_ROLE=middle", "TOR_NICKNAME=12345678901234567890", "TOR_CONTACT=test@example.com"}, "must match"},
@@ -323,6 +365,31 @@ func TestLoadRejects(t *testing.T) {
 			"exit empty policy entry",
 			[]string{"TOR_ROLE=exit", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "I_UNDERSTAND_EXIT=true", "TOR_EXIT_POLICY=accept 80;;reject *:*"},
 			"TOR_EXIT_POLICY contains an empty entry",
+		},
+		{
+			"bridge without obfs4 port",
+			[]string{"TOR_ROLE=bridge", "TOR_NICKNAME=TestBridge", "TOR_CONTACT=test@example.com"},
+			"TOR_ROLE=bridge requires TOR_OBFS4_PORT",
+		},
+		{
+			"bridge obfs4 port text",
+			[]string{"TOR_ROLE=bridge", "TOR_NICKNAME=TestBridge", "TOR_CONTACT=test@example.com", "TOR_OBFS4_PORT=obfs"},
+			`TOR_OBFS4_PORT "obfs" is not a number`,
+		},
+		{
+			"bridge obfs4 port zero",
+			[]string{"TOR_ROLE=bridge", "TOR_NICKNAME=TestBridge", "TOR_CONTACT=test@example.com", "TOR_OBFS4_PORT=0"},
+			"TOR_OBFS4_PORT 0 must be between 1 and 65535",
+		},
+		{
+			"bridge obfs4 port conflicts with orport",
+			[]string{"TOR_ROLE=bridge", "TOR_NICKNAME=TestBridge", "TOR_CONTACT=test@example.com", "TOR_OBFS4_PORT=9001"},
+			"TOR_OBFS4_PORT 9001 must differ from TOR_ORPORT",
+		},
+		{
+			"bridge bad distribution",
+			[]string{"TOR_ROLE=bridge", "TOR_NICKNAME=TestBridge", "TOR_CONTACT=test@example.com", "TOR_OBFS4_PORT=8443", "TOR_BRIDGE_DISTRIBUTION=bogus"},
+			`TOR_BRIDGE_DISTRIBUTION "bogus" must be one of`,
 		},
 	}
 

@@ -14,6 +14,7 @@ import (
 const (
 	RoleMiddle = "middle"
 	RoleExit   = "exit"
+	RoleBridge = "bridge"
 )
 
 var nicknameRE = regexp.MustCompile(`^[A-Za-z0-9]{1,19}$`)
@@ -38,6 +39,8 @@ var allowed = map[string]bool{
 	"TOR_MYFAMILY_MAX_DROP_PCT": true,
 	"TOR_EXIT_POLICY":           true,
 	"TOR_EXIT_IPV6":             true,
+	"TOR_OBFS4_PORT":            true,
+	"TOR_BRIDGE_DISTRIBUTION":   true,
 }
 
 var logLevels = map[string]bool{
@@ -46,6 +49,14 @@ var logLevels = map[string]bool{
 	"notice": true,
 	"warn":   true,
 	"err":    true,
+}
+
+var bridgeDistributions = map[string]bool{
+	"any":      true,
+	"none":     true,
+	"https":    true,
+	"email":    true,
+	"settings": true,
 }
 
 // Config is the validated torinit configuration for v0.
@@ -67,6 +78,8 @@ type Config struct {
 	MyFamilyMaxDropPct int
 	ExitPolicy         []string
 	ExitIPv6           bool
+	Obfs4Port          int
+	BridgeDistribution string
 }
 
 // Load parses and validates a list of KEY=VALUE environment entries.
@@ -90,9 +103,9 @@ func Load(environ []string) (*Config, error) {
 		return nil, fmt.Errorf("TOR_ROLE is required")
 	}
 	switch role {
-	case RoleMiddle, RoleExit:
+	case RoleMiddle, RoleExit, RoleBridge:
 	default:
-		return nil, fmt.Errorf("TOR_ROLE %q is not supported, use %q or %q", role, RoleMiddle, RoleExit)
+		return nil, fmt.Errorf("TOR_ROLE %q is not supported, use %q, %q, or %q", role, RoleMiddle, RoleExit, RoleBridge)
 	}
 	if role == RoleExit && values["I_UNDERSTAND_EXIT"] != "true" {
 		return nil, fmt.Errorf("TOR_ROLE=exit requires I_UNDERSTAND_EXIT=true")
@@ -141,7 +154,7 @@ func Load(environ []string) (*Config, error) {
 		return nil, fmt.Errorf("TOR_BANDWIDTH_BURST must be a single line")
 	}
 
-	sandbox := true
+	sandbox := role != RoleBridge
 	if value := values["TOR_SANDBOX"]; value != "" {
 		switch value {
 		case "0":
@@ -261,6 +274,37 @@ func Load(environ []string) (*Config, error) {
 		}
 	}
 
+	obfs4Port := 0
+	if role == RoleBridge {
+		value := values["TOR_OBFS4_PORT"]
+		if value == "" {
+			return nil, fmt.Errorf("TOR_ROLE=bridge requires TOR_OBFS4_PORT")
+		}
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, fmt.Errorf("TOR_OBFS4_PORT %q is not a number", value)
+		}
+		if n < 1 || n > 65535 {
+			return nil, fmt.Errorf("TOR_OBFS4_PORT %d must be between 1 and 65535", n)
+		}
+		if n == port {
+			return nil, fmt.Errorf("TOR_OBFS4_PORT %d must differ from TOR_ORPORT", n)
+		}
+		obfs4Port = n
+	}
+
+	bridgeDistribution := "any"
+	if value := values["TOR_BRIDGE_DISTRIBUTION"]; value != "" {
+		if strings.ContainsAny(value, "\r\n") {
+			return nil, fmt.Errorf("TOR_BRIDGE_DISTRIBUTION must be a single line")
+		}
+		lower := strings.ToLower(value)
+		if !bridgeDistributions[lower] {
+			return nil, fmt.Errorf("TOR_BRIDGE_DISTRIBUTION %q must be one of any, none, https, email, settings", value)
+		}
+		bridgeDistribution = lower
+	}
+
 	return &Config{
 		Role:               role,
 		Nickname:           nickname,
@@ -279,6 +323,8 @@ func Load(environ []string) (*Config, error) {
 		MyFamilyMaxDropPct: myFamilyMaxDropPct,
 		ExitPolicy:         exitPolicy,
 		ExitIPv6:           exitIPv6,
+		Obfs4Port:          obfs4Port,
+		BridgeDistribution: bridgeDistribution,
 	}, nil
 }
 

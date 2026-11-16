@@ -92,6 +92,28 @@ func TestGolden(t *testing.T) {
 			},
 			file: "exit-ipv6.torrc",
 		},
+		{
+			name: "bridge default",
+			env: []string{
+				"TOR_ROLE=bridge",
+				"TOR_NICKNAME=TestBridge",
+				"TOR_CONTACT=test@example.com",
+				"TOR_OBFS4_PORT=8443",
+			},
+			file: "bridge-default.torrc",
+		},
+		{
+			name: "bridge none sandbox",
+			env: []string{
+				"TOR_ROLE=bridge",
+				"TOR_NICKNAME=TestBridge",
+				"TOR_CONTACT=test@example.com",
+				"TOR_OBFS4_PORT=8443",
+				"TOR_BRIDGE_DISTRIBUTION=none",
+				"TOR_SANDBOX=1",
+			},
+			file: "bridge-none.torrc",
+		},
 	}
 
 	for _, tc := range tests {

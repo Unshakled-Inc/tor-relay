@@ -73,6 +73,12 @@ func Render(cfg *config.Config, dataDir string, includeTorrcD bool) string {
 		if cfg.ExitIPv6 {
 			b.WriteString("IPv6Exit 1\n")
 		}
+	} else if cfg.Role == config.RoleBridge {
+		b.WriteString("BridgeRelay 1\n")
+		b.WriteString("ServerTransportPlugin obfs4 exec /usr/local/bin/lyrebird\n")
+		fmt.Fprintf(&b, "ServerTransportListenAddr obfs4 0.0.0.0:%d\n", cfg.Obfs4Port)
+		b.WriteString("ExtORPort auto\n")
+		fmt.Fprintf(&b, "BridgeDistribution %s\n", cfg.BridgeDistribution)
 	} else {
 		b.WriteString("ExitRelay 0\n")
 		b.WriteString("ExitPolicy reject *:*\n")

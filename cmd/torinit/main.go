@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Unshakled-Inc/tor-relay/internal/bridge"
 	"github.com/Unshakled-Inc/tor-relay/internal/config"
 	"github.com/Unshakled-Inc/tor-relay/internal/family"
 	"github.com/Unshakled-Inc/tor-relay/internal/keys"
@@ -43,6 +44,8 @@ func main() {
 		os.Exit(healthcheckCmd())
 	case "keygen-family":
 		os.Exit(keygenFamilyCmd(args[1:]))
+	case "bridgeline":
+		os.Exit(bridgelineCmd(args[1:]))
 	default:
 		fmt.Fprintf(os.Stderr, "torinit: unknown subcommand %q\n", args[0])
 		os.Exit(2)
@@ -251,6 +254,36 @@ func keygenFamilyCmd(args []string) int {
 		return 2
 	}
 	line, err := keys.KeygenFamily(fs.Arg(0), *outDir, *force)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
+		return 1
+	}
+	fmt.Println(line)
+	return 0
+}
+
+func bridgelineCmd(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(os.Stderr, "torinit: bridgeline takes no arguments")
+		return 2
+	}
+
+	port := 0
+	if value := os.Getenv("TOR_OBFS4_PORT"); value != "" {
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "torinit: TOR_OBFS4_PORT %q is not a number\n", value)
+			return 1
+		}
+		port = n
+	}
+
+	line, err := bridge.Line(
+		filepath.Join(dataDir, "pt_state", "obfs4_bridgeline.txt"),
+		filepath.Join(dataDir, "fingerprint"),
+		os.Getenv("TOR_ADDRESS"),
+		port,
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
 		return 1

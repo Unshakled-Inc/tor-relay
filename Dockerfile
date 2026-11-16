@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 
 ARG TOR_VERSION
+ARG LYREBIRD_VERSION
 
 # Tor is compiled from the signed upstream tarball, never from distro packages.
 # The base is pinned by digest so a rebuild cannot silently pick up a new image.
@@ -79,6 +80,20 @@ RUN CGO_ENABLED=0 go build -trimpath \
       -ldflags "-s -w -X main.version=${TORINIT_VERSION}" \
       -o /torinit ./cmd/torinit
 
+# lyrebird is the obfs4 pluggable transport. The tag is pinned in
+# LYREBIRD_VERSION and the main package path is ./cmd/lyrebird.
+FROM golang:1.27.4-trixie@sha256:b54b2639de8c1bfe538ec5ffc45f29b1932235ac5f6d63c059853646677112d9 AS pt-build
+ARG LYREBIRD_VERSION
+
+RUN git clone --depth 1 --branch "${LYREBIRD_VERSION}" \
+      https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird.git /src/lyrebird
+
+WORKDIR /src/lyrebird
+
+RUN CGO_ENABLED=0 go build -trimpath \
+      -ldflags "-s -w -X main.lyrebirdVersion=${LYREBIRD_VERSION}" \
+      -o /pt/lyrebird ./cmd/lyrebird
+
 FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2 AS runtime
 ARG TOR_VERSION
 
@@ -90,6 +105,7 @@ LABEL org.opencontainers.image.source="https://github.com/Unshakled-Inc/tor-rela
 
 COPY --from=tor-build /rootfs/ /
 COPY --from=torinit-build /torinit /usr/local/bin/torinit
+COPY --from=pt-build /pt/lyrebird /usr/local/bin/lyrebird
 COPY --from=tor-build --chown=65532:65532 --chmod=0700 /var/lib/tor /var/lib/tor
 
 USER 65532:65532
