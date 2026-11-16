@@ -1,0 +1,26 @@
+services:
+  tor-relay:
+    # Published image: docker.io/unshakled/tor-relay:latest
+    image: tor-relay:dev
+    # Host networking lets tor bind ORPort directly and lets the
+    # reachability self-test work without manual port forwarding.
+    network_mode: host
+    # Alternative: bridge networking with an explicit port mapping.
+    # Trade-off: the ORPort self-test can fail unless the host forwards
+    # the port and TOR_ADDRESS is set to the public address. With host
+    # networking the relay sees the host interfaces directly.
+    # ports:
+    #   - "9001:9001"
+    env_file:
+      - .env.example
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    volumes:
+      - tor-data:/var/lib/tor
+
+volumes:
+  tor-data:
