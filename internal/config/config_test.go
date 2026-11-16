@@ -46,6 +46,31 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ORPort != 9001 || !cfg.Sandbox || cfg.LogLevel != "notice" {
 		t.Errorf("unexpected defaults: %+v", cfg)
 	}
+	if cfg.FamilyKeyDir != "/run/secrets" {
+		t.Errorf("FamilyKeyDir = %q, want /run/secrets", cfg.FamilyKeyDir)
+	}
+	if len(cfg.FamilyID) != 0 {
+		t.Errorf("FamilyID = %v, want empty", cfg.FamilyID)
+	}
+}
+
+func TestLoadFamily(t *testing.T) {
+	cfg, err := Load([]string{
+		"TOR_ROLE=middle",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+		"TOR_FAMILY_ID=id1 id2",
+		"TOR_FAMILY_KEY_DIR=/run/secrets",
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.FamilyID) != 2 || cfg.FamilyID[0] != "id1" || cfg.FamilyID[1] != "id2" {
+		t.Errorf("FamilyID = %v, want [id1 id2]", cfg.FamilyID)
+	}
+	if cfg.FamilyKeyDir != "/run/secrets" {
+		t.Errorf("FamilyKeyDir = %q, want /run/secrets", cfg.FamilyKeyDir)
+	}
 }
 
 func TestLoadRejects(t *testing.T) {
@@ -74,6 +99,16 @@ func TestLoadRejects(t *testing.T) {
 		{"bad sandbox", append(base[:0:0], base...), `TOR_SANDBOX "yes" must be 0 or 1`},
 		{"bad log level", append(base[:0:0], base...), `TOR_LOG_LEVEL "verbose" must be one of`},
 		{"unknown variable", append(base[:0:0], base...), "unknown environment variable TOR_NICKNMAE"},
+		{
+			"bad family id",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_FAMILY_ID=bad!id"},
+			`TOR_FAMILY_ID "bad!id" must be base64-like`,
+		},
+		{
+			"multiline family key dir",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_FAMILY_KEY_DIR=/run\nsecrets"},
+			"TOR_FAMILY_KEY_DIR must be a single line",
+		},
 	}
 
 	// Fix up cases that need extra entries appended to the base.

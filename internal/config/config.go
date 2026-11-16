@@ -10,6 +10,7 @@ import (
 const RoleMiddle = "middle"
 
 var nicknameRE = regexp.MustCompile(`^[A-Za-z0-9]{1,19}$`)
+var familyIDRE = regexp.MustCompile(`^[A-Za-z0-9+/]+={0,2}$`)
 
 var allowed = map[string]bool{
 	"TOR_ROLE":            true,
@@ -21,6 +22,8 @@ var allowed = map[string]bool{
 	"TOR_BANDWIDTH_BURST": true,
 	"TOR_SANDBOX":         true,
 	"TOR_LOG_LEVEL":       true,
+	"TOR_FAMILY_ID":       true,
+	"TOR_FAMILY_KEY_DIR":  true,
 }
 
 var logLevels = map[string]bool{
@@ -42,6 +45,8 @@ type Config struct {
 	BandwidthBurst string
 	Sandbox        bool
 	LogLevel       string
+	FamilyID       []string
+	FamilyKeyDir   string
 }
 
 // Load parses and validates a list of KEY=VALUE environment entries.
@@ -131,6 +136,24 @@ func Load(environ []string) (*Config, error) {
 		logLevel = value
 	}
 
+	familyID := []string{}
+	if value := values["TOR_FAMILY_ID"]; value != "" {
+		for _, id := range strings.Fields(value) {
+			if !familyIDRE.MatchString(id) {
+				return nil, fmt.Errorf("TOR_FAMILY_ID %q must be base64-like with no whitespace", id)
+			}
+			familyID = append(familyID, id)
+		}
+	}
+
+	familyKeyDir := "/run/secrets"
+	if value := values["TOR_FAMILY_KEY_DIR"]; value != "" {
+		if strings.ContainsAny(value, "\r\n") {
+			return nil, fmt.Errorf("TOR_FAMILY_KEY_DIR must be a single line")
+		}
+		familyKeyDir = value
+	}
+
 	return &Config{
 		Role:           role,
 		Nickname:       nickname,
@@ -141,5 +164,7 @@ func Load(environ []string) (*Config, error) {
 		BandwidthBurst: burst,
 		Sandbox:        sandbox,
 		LogLevel:       logLevel,
+		FamilyID:       familyID,
+		FamilyKeyDir:   familyKeyDir,
 	}, nil
 }

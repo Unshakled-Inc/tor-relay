@@ -39,6 +39,16 @@ func TestGolden(t *testing.T) {
 			},
 			file: "middle-all.torrc",
 		},
+		{
+			name: "middle family",
+			env: []string{
+				"TOR_ROLE=middle",
+				"TOR_NICKNAME=TestRelay",
+				"TOR_CONTACT=test@example.com",
+				"TOR_FAMILY_ID=id1 id2",
+			},
+			file: "middle-family.torrc",
+		},
 	}
 
 	for _, tc := range tests {

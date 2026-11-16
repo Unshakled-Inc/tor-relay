@@ -47,6 +47,9 @@ func Render(cfg *config.Config, dataDir string, includeTorrcD bool) string {
 	if cfg.BandwidthBurst != "" {
 		fmt.Fprintf(&b, "RelayBandwidthBurst %s\n", cfg.BandwidthBurst)
 	}
+	for _, id := range cfg.FamilyID {
+		fmt.Fprintf(&b, "FamilyId %s\n", id)
+	}
 	b.WriteString("ExitRelay 0\n")
 	b.WriteString("ExitPolicy reject *:*\n")
 	b.WriteString("ExitPolicy reject6 *:*\n")

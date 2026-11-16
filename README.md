@@ -2,7 +2,7 @@
 
 Hardened, signed, multi-arch Docker image for Tor relay and bridge operators, published by Unshakled Inc. Tor is compiled from the signed upstream source tarball, never from distro packages.
 
-Status: the middle relay role is available now. Exit, obfs4 bridge, WebTunnel, family keys, the debug variant, and metrics are in progress.
+Status: the middle relay role and family keys are available now. Exit, obfs4 bridge, WebTunnel, the debug variant, and metrics are in progress.
 
 ## What the image provides
 
@@ -11,6 +11,7 @@ Status: the middle relay role is available now. Exit, obfs4 bridge, WebTunnel, f
 - Runs as UID/GID 65532 and works with a read-only root filesystem.
 - Works with all Linux capabilities dropped and `no-new-privileges`.
 - `torinit` renders the torrc from environment variables, writes it to `/var/lib/tor/.torinit`, starts tor, forwards signals, and records the PID.
+- Installs family keys from `/run/secrets` and renders `FamilyId` lines.
 - Multi-arch images for `linux/amd64`, `linux/arm64`, and `linux/arm/v7`.
 - Keyless cosign signatures, SBOM, and provenance attestations from CI.
 - Images published to `docker.io/unshakled/tor-relay` and `ghcr.io/unshakled-inc/tor-relay`.
@@ -125,6 +126,8 @@ The current release supports these variables:
 | `TOR_BANDWIDTH_BURST` | no | | Passed to `RelayBandwidthBurst` |
 | `TOR_SANDBOX` | no | `1` | `0` or `1` |
 | `TOR_LOG_LEVEL` | no | `notice` | `debug`, `info`, `notice`, `warn`, or `err` |
+| `TOR_FAMILY_ID` | no | | One or more space-separated family IDs from `keygen-family` |
+| `TOR_FAMILY_KEY_DIR` | no | `/run/secrets` | Directory containing family key files |
 
 Any other variable starting with `TOR_` is rejected with an error naming it. This catches typos instead of silently ignoring them.
 
@@ -166,6 +169,7 @@ The image entrypoint is `torinit`. The current subcommands are:
 - `run`: the default. Validate, write the config, start tor, and forward signals.
 - `version`: print the torinit version and run `tor --version`.
 - `healthcheck`: read the PID file and exit 0 only if `/proc/<pid>` exists.
+- `keygen-family`: generate a family key in `/out` or the directory given by `--out`, print the `FamilyId` line, and refuse to overwrite an existing key unless `--force` is set.
 
 Examples:
 
@@ -173,7 +177,58 @@ Examples:
 docker run --rm --env-file .env docker.io/unshakled/tor-relay:latest render
 docker run --rm --env-file .env docker.io/unshakled/tor-relay:latest verify
 docker run --rm docker.io/unshakled/tor-relay:latest version
+mkdir -p family
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/family:/out" docker.io/unshakled/tor-relay:latest keygen-family myfamily
 ```
+
+## Family keys
+
+A family key lets a group of relays advertise that they belong to the same family. Generate a key on the host:
+
+```
+mkdir -p family
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/family:/out" docker.io/unshakled/tor-relay:latest keygen-family myfamily
+```
+
+This writes `family/myfamily.secret_family_key` and `family/myfamily.public_family_id`, and prints the `FamilyId` line. Add the printed ID to your env file:
+
+```
+TOR_FAMILY_ID=<id>
+```
+
+Mount the secret key as a Docker secret. With Compose:
+
+```
+services:
+  tor-relay:
+    image: docker.io/unshakled/tor-relay:latest
+    network_mode: host
+    env_file:
+      - .env
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    volumes:
+      - tor-data:/var/lib/tor
+    secrets:
+      - myfamily
+
+secrets:
+  myfamily:
+    file: ./family/myfamily.secret_family_key
+
+volumes:
+  tor-data:
+```
+
+The secret is mounted at `/run/secrets/myfamily`. `torinit` installs it as `myfamily.secret_family_key` in `/var/lib/tor/keys` with mode 0600.
+
+If `TOR_FAMILY_ID` is set and no key file is found, the container exits with an error. If a key file is present and `TOR_FAMILY_ID` is not set, it also exits with an error. This prevents a relay from silently losing its family membership.
+
+The `.public_family_id` file is not a secret. Keep it with the key file for reference and for publishing the ID to other operators.
 
 ## Hardening
 
@@ -298,13 +353,15 @@ actionlint
 - `Unable to find IPv4 address for ORPort`: set `TOR_ADDRESS` to the public address, or use host networking so tor can see the host interfaces.
 - Bootstrapping stays at `5% (conn)`: outbound TCP connections to Tor ORPorts are blocked. Check the host firewall and the network policy.
 - `Permission denied` on `/var/lib/tor`: the volume must be writable by UID/GID 65532. Fix ownership on the host before starting the container.
+- `FamilyId set but no *.secret_family_key found in /run/secrets`: mount the family key as a Docker secret, or set `TOR_FAMILY_KEY_DIR` to the directory that contains it.
+- `family key present but TOR_FAMILY_ID not set`: add `TOR_FAMILY_ID` to the env file with the ID printed by `keygen-family`.
 - The container exits immediately: run `torinit verify` with the same env file. The error message names the invalid variable or value.
 - `exec: "/bin/sh": stat /bin/sh: no such file or directory`: expected. The runtime image has no shell. Use `torinit` subcommands or `docker exec` with the torinit binary.
 - Healthcheck is unhealthy: check the tor log and the PID file at `/var/lib/tor/.torinit/pid`.
 
 ## Roadmap
 
-- Phase 2: exit role, obfs4 bridge with lyrebird, WebTunnel, family keys, MyFamily sync, debug variant with nyx, metrics.
+- Phase 2: exit role, obfs4 bridge with lyrebird, WebTunnel, MyFamily sync, debug variant with nyx, metrics.
 - Phase 3: systemd migration guide, family keys guide, auto-update guide, security policy, changelog.
 
 ## Security

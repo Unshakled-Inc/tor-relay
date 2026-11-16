@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Unshakled-Inc/tor-relay/internal/config"
+	"github.com/Unshakled-Inc/tor-relay/internal/keys"
 	"github.com/Unshakled-Inc/tor-relay/internal/render"
 	"github.com/Unshakled-Inc/tor-relay/internal/supervise"
 )
@@ -38,6 +40,8 @@ func main() {
 		os.Exit(versionCmd())
 	case "healthcheck":
 		os.Exit(healthcheckCmd())
+	case "keygen-family":
+		os.Exit(keygenFamilyCmd(args[1:]))
 	default:
 		fmt.Fprintf(os.Stderr, "torinit: unknown subcommand %q\n", args[0])
 		os.Exit(2)
@@ -51,6 +55,19 @@ func loadConfig() (*config.Config, bool) {
 		return nil, false
 	}
 	return cfg, true
+}
+
+func discoverAndValidateFamily(cfg *config.Config) ([]keys.KeyFile, bool) {
+	keyFiles, err := keys.Discover(cfg.FamilyKeyDir, len(cfg.FamilyID) > 0)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
+		return nil, false
+	}
+	if err := keys.Validate(cfg.FamilyID, keyFiles, cfg.FamilyKeyDir); err != nil {
+		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
+		return nil, false
+	}
+	return keyFiles, true
 }
 
 func renderCmd(args []string) int {
@@ -73,6 +90,9 @@ func verifyCmd(args []string) int {
 	}
 	cfg, ok := loadConfig()
 	if !ok {
+		return 1
+	}
+	if _, ok := discoverAndValidateFamily(cfg); !ok {
 		return 1
 	}
 
@@ -111,6 +131,10 @@ func runCmd() int {
 	if !ok {
 		return 1
 	}
+	keyFiles, ok := discoverAndValidateFamily(cfg)
+	if !ok {
+		return 1
+	}
 
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
@@ -127,6 +151,18 @@ func runCmd() int {
 	if err := os.Chmod(stateDir, 0700); err != nil {
 		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
 		return 1
+	}
+
+	installResult, err := keys.Install(keyFiles, filepath.Join(dataDir, "keys"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
+		return 1
+	}
+	for _, name := range installResult.Installed {
+		fmt.Fprintf(os.Stderr, "torinit: installed family key %s\n", name)
+	}
+	for _, name := range installResult.Replaced {
+		fmt.Fprintf(os.Stderr, "torinit: replaced family key %s\n", name)
 	}
 
 	torrcPath := filepath.Join(stateDir, "torrc")
@@ -158,6 +194,27 @@ func versionCmd() int {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return exitCode(cmd.Run())
+}
+
+func keygenFamilyCmd(args []string) int {
+	fs := flag.NewFlagSet("keygen-family", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	outDir := fs.String("out", "/out", "output directory")
+	force := fs.Bool("force", false, "overwrite an existing family key")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "usage: torinit keygen-family [--out DIR] [--force] <name>")
+		return 2
+	}
+	line, err := keys.KeygenFamily(fs.Arg(0), *outDir, *force)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
+		return 1
+	}
+	fmt.Println(line)
+	return 0
 }
 
 func healthcheckCmd() int {
