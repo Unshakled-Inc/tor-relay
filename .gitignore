@@ -8,3 +8,4 @@ ed25519_master_id_secret_key
 /tmp/
 *.tgz
 *.age
+*.tar.gz
