@@ -94,6 +94,11 @@ func Render(cfg *config.Config, dataDir string, includeTorrcD bool) string {
 			b.WriteString("ExitPolicy reject6 *:*\n")
 		}
 	}
+	if cfg.MetricsPort != "" {
+		fmt.Fprintf(&b, "MetricsPort %s\n", cfg.MetricsPort)
+		fmt.Fprintf(&b, "MetricsPortPolicy %s\n", cfg.MetricsPolicy)
+		b.WriteString("MetricsPortPolicy reject *\n")
+	}
 	if cfg.ControlPort > 0 {
 		fmt.Fprintf(&b, "ControlPort 127.0.0.1:%d\n", cfg.ControlPort)
 		b.WriteString("CookieAuthentication 1\n")

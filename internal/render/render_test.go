@@ -82,6 +82,17 @@ func TestGolden(t *testing.T) {
 			file: "middle-debug.torrc",
 		},
 		{
+			name: "middle metrics",
+			env: []string{
+				"TOR_ROLE=middle",
+				"TOR_NICKNAME=TestRelay",
+				"TOR_CONTACT=test@example.com",
+				"TOR_METRICS_PORT=0.0.0.0:9035",
+				"TOR_METRICS_POLICY=accept 10.0.0.0/8",
+			},
+			file: "middle-metrics.torrc",
+		},
+		{
 			name: "middle myfamily url",
 			env: []string{
 				"TOR_ROLE=middle",
@@ -226,6 +237,30 @@ func TestRenderExitWithoutEnvPolicy(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, "%include /etc/tor/torrc.d/\n") {
 		t.Fatalf("missing torrc.d include:\n%s", got)
+	}
+}
+
+func TestRenderMetricsPublic(t *testing.T) {
+	cfg, err := config.Load([]string{
+		"TOR_ROLE=middle",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+		"TOR_METRICS_PORT=0.0.0.0:9035",
+		"TOR_METRICS_POLICY=accept *",
+		"TOR_METRICS_PUBLIC=1",
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := Render(cfg, "/var/lib/tor", false)
+	if !strings.Contains(got, "MetricsPort 0.0.0.0:9035\n") {
+		t.Fatalf("missing MetricsPort:\n%s", got)
+	}
+	if !strings.Contains(got, "MetricsPortPolicy accept *\n") {
+		t.Fatalf("missing public policy:\n%s", got)
+	}
+	if !strings.Contains(got, "MetricsPortPolicy reject *\n") {
+		t.Fatalf("missing reject fallback:\n%s", got)
 	}
 }
 

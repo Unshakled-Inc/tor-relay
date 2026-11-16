@@ -91,6 +91,7 @@ The generated torrc already sets these. Use the dedicated variable where one exi
 | `AssumeReachable` | WebTunnel role | Already set to `1` for WebTunnel. |
 | `Sandbox` | `TOR_SANDBOX` | Use the dedicated variable. |
 | `ControlPort`, `CookieAuthentication` | `TOR_CONTROL_PORT` in the debug variant | Use the dedicated variable in the debug image. |
+| `MetricsPort`, `MetricsPortPolicy` | `TOR_METRICS_PORT`, `TOR_METRICS_POLICY`, `TOR_METRICS_PUBLIC` | Use the dedicated variables. They add the `reject *` fallback and enforce the public acknowledgment. |
 
 If you set a scalar option in both a dedicated variable and `TOR_EXTRA_ARGS`, the extra arg wins because it is rendered later. For example, `TOR_SANDBOX=1` plus `TOR_EXTRA_ARGS=Sandbox 0` produces `Sandbox 0`.
 
@@ -183,11 +184,18 @@ TOR_EXTRA_ARGS=ControlPort 127.0.0.1:9051;CookieAuthentication 1
 
 ### Metrics
 
+The dedicated variables are preferred:
+
 ```
-TOR_EXTRA_ARGS=MetricsPort 0.0.0.0:9035;MetricsPortPolicy accept 10.0.0.0/8
+TOR_METRICS_PORT=0.0.0.0:9035
+TOR_METRICS_POLICY=accept 10.0.0.0/8
 ```
 
-Metrics will get dedicated variables in a later release. Until then, `TOR_EXTRA_ARGS` is the way to enable them.
+`TOR_EXTRA_ARGS` can also set the same options, but it does not add the `reject *` fallback or enforce `TOR_METRICS_PUBLIC`:
+
+```
+TOR_EXTRA_ARGS=MetricsPort 0.0.0.0:9035;MetricsPortPolicy accept 10.0.0.0/8;MetricsPortPolicy reject *
+```
 
 ### Testing
 

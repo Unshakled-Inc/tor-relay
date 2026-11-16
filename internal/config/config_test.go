@@ -179,6 +179,43 @@ func TestLoadExit(t *testing.T) {
 	}
 }
 
+func TestLoadMetrics(t *testing.T) {
+	cfg, err := Load([]string{
+		"TOR_ROLE=middle",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+		"TOR_METRICS_PORT=0.0.0.0:9035",
+		"TOR_METRICS_POLICY=accept 10.0.0.0/8",
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.MetricsPort != "0.0.0.0:9035" {
+		t.Errorf("MetricsPort = %q", cfg.MetricsPort)
+	}
+	if cfg.MetricsPolicy != "accept 10.0.0.0/8" {
+		t.Errorf("MetricsPolicy = %q", cfg.MetricsPolicy)
+	}
+	if cfg.MetricsPublic {
+		t.Error("MetricsPublic = true, want false")
+	}
+
+	public, err := Load([]string{
+		"TOR_ROLE=middle",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+		"TOR_METRICS_PORT=0.0.0.0:9035",
+		"TOR_METRICS_POLICY=accept *",
+		"TOR_METRICS_PUBLIC=1",
+	})
+	if err != nil {
+		t.Fatalf("Load public: %v", err)
+	}
+	if !public.MetricsPublic {
+		t.Error("MetricsPublic = false, want true")
+	}
+}
+
 func TestLoadDebugControlPort(t *testing.T) {
 	cfg, err := Load([]string{
 		"TOR_ROLE=middle",
@@ -586,6 +623,41 @@ func TestLoadRejects(t *testing.T) {
 			"control port high",
 			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TORINIT_VARIANT=debug", "TOR_CONTROL_PORT=65536"},
 			"TOR_CONTROL_PORT 65536 must be between 1 and 65535",
+		},
+		{
+			"metrics port without policy",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_METRICS_PORT=0.0.0.0:9035"},
+			"TOR_METRICS_PORT requires TOR_METRICS_POLICY",
+		},
+		{
+			"metrics policy without port",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_METRICS_POLICY=accept 10.0.0.0/8"},
+			"TOR_METRICS_POLICY requires TOR_METRICS_PORT",
+		},
+		{
+			"metrics accept all without public",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_METRICS_PORT=0.0.0.0:9035", "TOR_METRICS_POLICY=accept *"},
+			`TOR_METRICS_POLICY "accept *" requires TOR_METRICS_PUBLIC=1`,
+		},
+		{
+			"metrics public without port",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_METRICS_PUBLIC=1"},
+			"TOR_METRICS_PUBLIC=1 requires TOR_METRICS_PORT",
+		},
+		{
+			"metrics bad public",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_METRICS_PORT=0.0.0.0:9035", "TOR_METRICS_POLICY=accept 10.0.0.0/8", "TOR_METRICS_PUBLIC=yes"},
+			`TOR_METRICS_PUBLIC "yes" must be 0 or 1`,
+		},
+		{
+			"metrics port without host",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_METRICS_PORT=9035", "TOR_METRICS_POLICY=accept 10.0.0.0/8"},
+			`TOR_METRICS_PORT "9035" must be host:port`,
+		},
+		{
+			"metrics port high",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_METRICS_PORT=0.0.0.0:70000", "TOR_METRICS_POLICY=accept 10.0.0.0/8"},
+			`TOR_METRICS_PORT port "70000" must be between 1 and 65535`,
 		},
 	}
 

@@ -48,6 +48,9 @@ var allowed = map[string]bool{
 	"TOR_DNS_RESOLV_CONF":       true,
 	"TOR_EXTRA_ARGS":            true,
 	"TOR_CONTROL_PORT":          true,
+	"TOR_METRICS_PORT":          true,
+	"TOR_METRICS_POLICY":        true,
+	"TOR_METRICS_PUBLIC":        true,
 }
 
 var logLevels = map[string]bool{
@@ -92,6 +95,9 @@ type Config struct {
 	DNSResolvConf      string
 	ExtraArgs          []string
 	ControlPort        int
+	MetricsPort        string
+	MetricsPolicy      string
+	MetricsPublic      bool
 }
 
 // Load parses and validates a list of KEY=VALUE environment entries.
@@ -396,6 +402,59 @@ func Load(environ []string) (*Config, error) {
 		controlPort = n
 	}
 
+	metricsPublic := false
+	if value := values["TOR_METRICS_PUBLIC"]; value != "" {
+		switch value {
+		case "0":
+			metricsPublic = false
+		case "1":
+			metricsPublic = true
+		default:
+			return nil, fmt.Errorf("TOR_METRICS_PUBLIC %q must be 0 or 1", value)
+		}
+	}
+
+	metricsPort := ""
+	if value := values["TOR_METRICS_PORT"]; value != "" {
+		if strings.ContainsAny(value, "\r\n") {
+			return nil, fmt.Errorf("TOR_METRICS_PORT must be a single line")
+		}
+		_, portStr, err := net.SplitHostPort(value)
+		if err != nil {
+			return nil, fmt.Errorf("TOR_METRICS_PORT %q must be host:port", value)
+		}
+		n, err := strconv.Atoi(portStr)
+		if err != nil || n < 1 || n > 65535 {
+			return nil, fmt.Errorf("TOR_METRICS_PORT port %q must be between 1 and 65535", portStr)
+		}
+		metricsPort = value
+	}
+
+	metricsPolicy := ""
+	if value := values["TOR_METRICS_POLICY"]; value != "" {
+		if strings.ContainsAny(value, "\r\n") {
+			return nil, fmt.Errorf("TOR_METRICS_POLICY must be a single line")
+		}
+		metricsPolicy = strings.TrimSpace(value)
+		if metricsPolicy == "" {
+			return nil, fmt.Errorf("TOR_METRICS_POLICY must not be empty")
+		}
+	}
+
+	if metricsPort == "" && metricsPolicy != "" {
+		return nil, fmt.Errorf("TOR_METRICS_POLICY requires TOR_METRICS_PORT")
+	}
+	if metricsPort == "" && metricsPublic {
+		return nil, fmt.Errorf("TOR_METRICS_PUBLIC=1 requires TOR_METRICS_PORT")
+	}
+	if metricsPort != "" && metricsPolicy == "" {
+		return nil, fmt.Errorf("TOR_METRICS_PORT requires TOR_METRICS_POLICY")
+	}
+	normalizedPolicy := strings.ToLower(strings.Join(strings.Fields(metricsPolicy), " "))
+	if normalizedPolicy == "accept *" && !metricsPublic {
+		return nil, fmt.Errorf("TOR_METRICS_POLICY \"accept *\" requires TOR_METRICS_PUBLIC=1")
+	}
+
 	return &Config{
 		Role:               role,
 		Nickname:           nickname,
@@ -421,6 +480,9 @@ func Load(environ []string) (*Config, error) {
 		DNSResolvConf:      dnsResolvConf,
 		ExtraArgs:          extraArgs,
 		ControlPort:        controlPort,
+		MetricsPort:        metricsPort,
+		MetricsPolicy:      metricsPolicy,
+		MetricsPublic:      metricsPublic,
 	}, nil
 }
 

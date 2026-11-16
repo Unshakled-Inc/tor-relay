@@ -155,6 +155,8 @@ jobs:
         run: docker run --rm --env-file examples/bridge/.env.example tor-relay:ci verify
       - name: verify webtunnel example
         run: docker run --rm --env-file examples/webtunnel/.env.example tor-relay:ci verify
+      - name: verify metrics
+        run: docker run --rm --env-file examples/middle/.env.example -e "TOR_METRICS_PORT=0.0.0.0:9035" -e "TOR_METRICS_POLICY=accept 10.0.0.0/8" tor-relay:ci verify
       - name: build debug for this platform
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
