@@ -7,6 +7,12 @@ ARG TOR_VERSION
 FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS tor-build
 ARG TOR_VERSION
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Package versions are not pinned here. The base image is pinned by digest,
+# and Debian removes superseded versions from trixie, so exact pins would
+# break on security updates.
+# hadolint ignore=DL3008
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       build-essential \
@@ -31,10 +37,12 @@ RUN gpg --dearmor < /src/tor-release.asc > /src/tor-release.gpg \
  && chmod +x /src/verify-tor-source.sh \
  && /src/verify-tor-source.sh "$TOR_VERSION" /src/tor-release.gpg /src/work
 
+RUN tar -xzf "/src/work/tor-$TOR_VERSION.tar.gz" -C /src
+
+WORKDIR /src/tor-${TOR_VERSION}
+
 # Fail closed: the configure summary must show seccomp and zstd support.
-RUN tar -xzf "/src/work/tor-$TOR_VERSION.tar.gz" -C /src \
- && cd "/src/tor-$TOR_VERSION" \
- && ./configure \
+RUN ./configure \
       --prefix=/usr \
       --sysconfdir=/etc \
       --localstatedir=/var \
@@ -46,8 +54,9 @@ RUN tar -xzf "/src/work/tor-$TOR_VERSION.tar.gz" -C /src \
  && grep -Eq 'libseccomp \(--disable-seccomp\):[[:space:]]+yes' /src/configure.out \
  && grep -Eq 'libzstd \(--enable-zstd\):[[:space:]]+yes' /src/configure.out \
  && make -j"$(nproc)" \
- && make install DESTDIR=/out \
- && chmod +x /src/collect-libs.sh \
+ && make install DESTDIR=/out
+
+RUN chmod +x /src/collect-libs.sh \
  && /src/collect-libs.sh /out/usr/bin/tor /rootfs \
  && mkdir -p /rootfs/usr/bin \
  && cp -a /out/usr/bin/tor /rootfs/usr/bin/tor \
