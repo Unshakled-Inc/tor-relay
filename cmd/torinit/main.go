@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/Unshakled-Inc/tor-relay/internal/config"
 	"github.com/Unshakled-Inc/tor-relay/internal/render"
@@ -34,6 +36,8 @@ func main() {
 		os.Exit(runCmd())
 	case "version":
 		os.Exit(versionCmd())
+	case "healthcheck":
+		os.Exit(healthcheckCmd())
 	default:
 		fmt.Fprintf(os.Stderr, "torinit: unknown subcommand %q\n", args[0])
 		os.Exit(2)
@@ -154,6 +158,21 @@ func versionCmd() int {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return exitCode(cmd.Run())
+}
+
+func healthcheckCmd() int {
+	data, err := os.ReadFile(filepath.Join(stateDir, "pid"))
+	if err != nil {
+		return 1
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return 1
+	}
+	if _, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid))); err != nil {
+		return 1
+	}
+	return 0
 }
 
 func exitCode(err error) int {

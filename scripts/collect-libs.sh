@@ -9,6 +9,13 @@
 # recreated pointing at that copy.
 set -eu
 
+normalize() {
+    case "$1" in
+        /lib/*) printf '/usr/lib/%s' "${1#/lib/}" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
 if [ "$#" -ne 2 ]; then
     echo "usage: $0 <binary> <staging-rootfs>" >&2
     exit 2
@@ -64,6 +71,11 @@ while IFS= read -r line; do
         echo "error: cannot resolve $lib" >&2
         exit 1
     fi
+
+    # The runtime's /lib is a symlink to /usr/lib, so normalize both paths.
+    # Copying a /lib directory tree into / would fail against that symlink.
+    real=$(normalize "$real")
+    lib=$(normalize "$lib")
 
     dest="$staging$real"
     mkdir -p "${dest%/*}"
