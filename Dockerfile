@@ -115,11 +115,48 @@ LABEL org.opencontainers.image.source="https://github.com/Unshakled-Inc/tor-rela
       org.opencontainers.image.version="${TOR_VERSION}" \
       org.opencontainers.image.title="tor-relay"
 
+ENV TORINIT_VARIANT=runtime
+
 COPY --from=tor-build /rootfs/ /
 COPY --from=torinit-build /torinit /usr/local/bin/torinit
 COPY --from=pt-build /pt/lyrebird /usr/local/bin/lyrebird
 COPY --from=pt-build /pt/webtunnel /usr/local/bin/webtunnel
 COPY --from=tor-build --chown=65532:65532 --chmod=0700 /var/lib/tor /var/lib/tor
+
+USER 65532:65532
+VOLUME /var/lib/tor
+EXPOSE 9001
+
+ENTRYPOINT ["/usr/local/bin/torinit"]
+CMD ["run"]
+
+HEALTHCHECK --interval=60s --timeout=5s --start-period=120s CMD ["/usr/local/bin/torinit","healthcheck"]
+
+# The debug variant adds nyx on top of the same tor and pluggable transport
+# binaries. It uses the same pinned Debian base as the builder.
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS debug
+
+# Package versions are not pinned here. The base image is pinned by digest,
+# and Debian removes superseded versions from trixie, so exact pins would
+# break on security updates.
+# hadolint ignore=DL3008
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      nyx \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=tor-build /rootfs/ /
+COPY --from=torinit-build /torinit /usr/local/bin/torinit
+COPY --from=pt-build /pt/lyrebird /usr/local/bin/lyrebird
+COPY --from=pt-build /pt/webtunnel /usr/local/bin/webtunnel
+COPY --from=tor-build --chown=65532:65532 --chmod=0700 /var/lib/tor /var/lib/tor
+
+RUN groupadd --gid 65532 nonroot \
+ && useradd --uid 65532 --gid 65532 --home-dir /var/lib/tor --no-create-home --shell /usr/sbin/nologin nonroot
+
+ENV TORINIT_VARIANT=debug \
+    HOME=/var/lib/tor
 
 USER 65532:65532
 VOLUME /var/lib/tor

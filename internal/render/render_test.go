@@ -71,6 +71,17 @@ func TestGolden(t *testing.T) {
 			file: "middle-extra.torrc",
 		},
 		{
+			name: "middle debug control port",
+			env: []string{
+				"TOR_ROLE=middle",
+				"TOR_NICKNAME=TestRelay",
+				"TOR_CONTACT=test@example.com",
+				"TORINIT_VARIANT=debug",
+				"TOR_CONTROL_PORT=9051",
+			},
+			file: "middle-debug.torrc",
+		},
+		{
 			name: "middle myfamily url",
 			env: []string{
 				"TOR_ROLE=middle",

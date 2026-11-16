@@ -94,6 +94,10 @@ func Render(cfg *config.Config, dataDir string, includeTorrcD bool) string {
 			b.WriteString("ExitPolicy reject6 *:*\n")
 		}
 	}
+	if cfg.ControlPort > 0 {
+		fmt.Fprintf(&b, "ControlPort 127.0.0.1:%d\n", cfg.ControlPort)
+		b.WriteString("CookieAuthentication 1\n")
+	}
 	if cfg.DNSResolvConf != "" {
 		fmt.Fprintf(&b, "ServerDNSResolvConfFile %s\n", cfg.DNSResolvConf)
 	}

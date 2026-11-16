@@ -47,6 +47,7 @@ var allowed = map[string]bool{
 	"TOR_WEBTUNNEL_LISTEN":      true,
 	"TOR_DNS_RESOLV_CONF":       true,
 	"TOR_EXTRA_ARGS":            true,
+	"TOR_CONTROL_PORT":          true,
 }
 
 var logLevels = map[string]bool{
@@ -90,6 +91,7 @@ type Config struct {
 	WebTunnelListen    string
 	DNSResolvConf      string
 	ExtraArgs          []string
+	ControlPort        int
 }
 
 // Load parses and validates a list of KEY=VALUE environment entries.
@@ -106,6 +108,14 @@ func Load(environ []string) (*Config, error) {
 			return nil, fmt.Errorf("unknown environment variable %s", name)
 		}
 		values[name] = value
+	}
+
+	variant := values["TORINIT_VARIANT"]
+	if variant == "" {
+		variant = "runtime"
+	}
+	if variant != "runtime" && variant != "debug" {
+		return nil, fmt.Errorf("TORINIT_VARIANT %q must be runtime or debug", variant)
 	}
 
 	role := values["TOR_ROLE"]
@@ -371,6 +381,21 @@ func Load(environ []string) (*Config, error) {
 		}
 	}
 
+	controlPort := 0
+	if value := values["TOR_CONTROL_PORT"]; value != "" {
+		if variant != "debug" {
+			return nil, fmt.Errorf("TOR_CONTROL_PORT is only allowed in the debug image variant")
+		}
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, fmt.Errorf("TOR_CONTROL_PORT %q is not a number", value)
+		}
+		if n < 1 || n > 65535 {
+			return nil, fmt.Errorf("TOR_CONTROL_PORT %d must be between 1 and 65535", n)
+		}
+		controlPort = n
+	}
+
 	return &Config{
 		Role:               role,
 		Nickname:           nickname,
@@ -395,6 +420,7 @@ func Load(environ []string) (*Config, error) {
 		WebTunnelListen:    webTunnelListen,
 		DNSResolvConf:      dnsResolvConf,
 		ExtraArgs:          extraArgs,
+		ControlPort:        controlPort,
 	}, nil
 }
 

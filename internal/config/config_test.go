@@ -179,6 +179,34 @@ func TestLoadExit(t *testing.T) {
 	}
 }
 
+func TestLoadDebugControlPort(t *testing.T) {
+	cfg, err := Load([]string{
+		"TOR_ROLE=middle",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+		"TORINIT_VARIANT=debug",
+		"TOR_CONTROL_PORT=9051",
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ControlPort != 9051 {
+		t.Errorf("ControlPort = %d, want 9051", cfg.ControlPort)
+	}
+
+	runtime, err := Load([]string{
+		"TOR_ROLE=middle",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+	})
+	if err != nil {
+		t.Fatalf("Load runtime: %v", err)
+	}
+	if runtime.ControlPort != 0 {
+		t.Errorf("ControlPort = %d, want 0", runtime.ControlPort)
+	}
+}
+
 func TestLoadExtraOptions(t *testing.T) {
 	cfg, err := Load([]string{
 		"TOR_ROLE=middle",
@@ -533,6 +561,31 @@ func TestLoadRejects(t *testing.T) {
 			"dns resolv conf multiline",
 			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_DNS_RESOLV_CONF=/etc/tor\nresolv.conf"},
 			"TOR_DNS_RESOLV_CONF must be a single line",
+		},
+		{
+			"control port in runtime",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_CONTROL_PORT=9051"},
+			"TOR_CONTROL_PORT is only allowed in the debug image variant",
+		},
+		{
+			"control port in explicit runtime",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TORINIT_VARIANT=runtime", "TOR_CONTROL_PORT=9051"},
+			"TOR_CONTROL_PORT is only allowed in the debug image variant",
+		},
+		{
+			"unknown variant",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TORINIT_VARIANT=staging"},
+			`TORINIT_VARIANT "staging" must be runtime or debug`,
+		},
+		{
+			"control port text",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TORINIT_VARIANT=debug", "TOR_CONTROL_PORT=control"},
+			`TOR_CONTROL_PORT "control" is not a number`,
+		},
+		{
+			"control port high",
+			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TORINIT_VARIANT=debug", "TOR_CONTROL_PORT=65536"},
+			"TOR_CONTROL_PORT 65536 must be between 1 and 65535",
 		},
 	}
 

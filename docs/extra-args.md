@@ -90,6 +90,7 @@ The generated torrc already sets these. Use the dedicated variable where one exi
 | `BridgeRelay`, `ServerTransportPlugin`, `ServerTransportListenAddr`, `ServerTransportOptions`, `ExtORPort`, `BridgeDistribution` | Role and `TOR_OBFS4_PORT`, `TOR_BRIDGE_DISTRIBUTION`, `TOR_WEBTUNNEL_*` | Use the dedicated variables where they exist. |
 | `AssumeReachable` | WebTunnel role | Already set to `1` for WebTunnel. |
 | `Sandbox` | `TOR_SANDBOX` | Use the dedicated variable. |
+| `ControlPort`, `CookieAuthentication` | `TOR_CONTROL_PORT` in the debug variant | Use the dedicated variable in the debug image. |
 
 If you set a scalar option in both a dedicated variable and `TOR_EXTRA_ARGS`, the extra arg wins because it is rendered later. For example, `TOR_SANDBOX=1` plus `TOR_EXTRA_ARGS=Sandbox 0` produces `Sandbox 0`.
 
@@ -168,11 +169,17 @@ The runtime root filesystem is read-only. Mount a writable volume at `/var/log/t
 
 ### Control port for nyx
 
+The debug variant has a dedicated variable:
+
+```
+TOR_CONTROL_PORT=9051
+```
+
+It renders `ControlPort 127.0.0.1:9051` and `CookieAuthentication 1`. The runtime image rejects it. You can also set the same options through `TOR_EXTRA_ARGS`, but then the runtime image accepts them too:
+
 ```
 TOR_EXTRA_ARGS=ControlPort 127.0.0.1:9051;CookieAuthentication 1
 ```
-
-The runtime image does not contain nyx. The debug variant will add it and a dedicated `TOR_CONTROL_PORT`. Until then, these options work but are only useful from a separate container or `docker exec`.
 
 ### Metrics
 

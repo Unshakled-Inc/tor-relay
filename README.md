@@ -2,7 +2,7 @@
 
 Hardened, signed, multi-arch Docker image for Tor relay and bridge operators, published by Unshakled Inc. Tor is compiled from the signed upstream source tarball, never from distro packages.
 
-Status: the middle and exit relay roles, the obfs4 and WebTunnel bridge roles, family keys, and MyFamily are available now. The debug variant and metrics are in progress.
+Status: the middle and exit relay roles, the obfs4 and WebTunnel bridge roles, family keys, MyFamily, and the debug variant are available now. Metrics are in progress.
 
 ## What the image provides
 
@@ -14,6 +14,7 @@ Status: the middle and exit relay roles, the obfs4 and WebTunnel bridge roles, f
 - Installs family keys from `/run/secrets` and renders `FamilyId` lines.
 - Renders `MyFamily` from an env var, or syncs it from an https URL and reloads tor when the list changes.
 - Ships lyrebird for obfs4 bridges and the webtunnel server for WebTunnel bridges, and prints the client bridge line.
+- Ships a `-debug` variant with nyx for live monitoring.
 - Multi-arch images for `linux/amd64`, `linux/arm64`, and `linux/arm/v7`.
 - Keyless cosign signatures, SBOM, and provenance attestations from CI.
 - Images published to `docker.io/unshakled/tor-relay` and `ghcr.io/unshakled-inc/tor-relay`.
@@ -143,6 +144,7 @@ The current release supports these variables:
 | `TOR_WEBTUNNEL_LISTEN` | no | `127.0.0.1:15000` | host:port for the webtunnel listener |
 | `TOR_DNS_RESOLV_CONF` | no | | Path rendered as `ServerDNSResolvConfFile`, mainly for exit relays |
 | `TOR_EXTRA_ARGS` | no | | Semicolon-separated torrc lines, rendered verbatim at the end |
+| `TOR_CONTROL_PORT` | no | | Debug image only, 1 to 65535; renders `ControlPort 127.0.0.1:<port>` and `CookieAuthentication 1` |
 
 Any other variable starting with `TOR_` is rejected with an error naming it. This catches typos instead of silently ignoring them.
 
@@ -186,6 +188,8 @@ For `TOR_ROLE=exit`, `ExitRelay 1` replaces `ExitRelay 0`, the middle relay reje
 For `TOR_ROLE=bridge`, the middle relay reject policies are not added. The torrc adds `BridgeRelay 1`, `ServerTransportPlugin obfs4 exec /usr/local/bin/lyrebird`, `ServerTransportListenAddr obfs4 0.0.0.0:<TOR_OBFS4_PORT>`, `ExtORPort auto`, and `BridgeDistribution <value>`. `TOR_SANDBOX` defaults to `0` for bridges.
 
 For `TOR_ROLE=webtunnel`, the torrc uses the directives from the Tor Project's WebTunnel guide: `BridgeRelay 1`, `ORPort 127.0.0.1:auto`, `AssumeReachable 1`, `ServerTransportPlugin webtunnel exec /usr/local/bin/webtunnel`, `ServerTransportListenAddr webtunnel <TOR_WEBTUNNEL_LISTEN>`, `ServerTransportOptions webtunnel url=<TOR_WEBTUNNEL_URL>`, and `ExtORPort auto`. Relay-only options such as `Address`, bandwidth, `FamilyId`, and `MyFamily` are not rendered for this role. `TOR_SANDBOX` defaults to `0`.
+
+When `TOR_CONTROL_PORT` is set in the debug variant, torinit adds `ControlPort 127.0.0.1:<port>` and `CookieAuthentication 1`. The runtime image rejects the variable.
 
 If `/etc/tor/torrc.d/` exists and contains at least one `*.conf` file, torinit appends:
 
@@ -422,6 +426,33 @@ See `examples/webtunnel/` for a compose file and an `nginx.conf.example`.
 
 Cloudflare proxy and Cloudflare Tunnel work in front of this bridge. If Cloudflare proxies the hostname, keep the origin nginx on 443 with a certificate Cloudflare trusts, allow WebSocket Upgrade, and trust Cloudflare's client IP ranges in nginx. If you use Cloudflare Tunnel, point it at `http://127.0.0.1:15000`; no public IP or open ports are needed. Cloudflare terminates TLS at its edge, so the URL is the public Cloudflare hostname.
 
+## Debug variant
+
+The debug image adds nyx and a shell to the same tor and pluggable transport binaries. It uses the pinned Debian trixie-slim base, not distroless.
+
+Use the `-debug` tag and set the control port:
+
+```
+docker run --rm -it --name tor-debug \
+  --network host \
+  --env-file .env \
+  -e TOR_CONTROL_PORT=9051 \
+  -v tor-data:/var/lib/tor \
+  docker.io/unshakled/tor-relay:latest-debug
+```
+
+In another terminal, connect nyx:
+
+```
+docker exec -it tor-debug nyx
+```
+
+`TOR_CONTROL_PORT=9051` renders `ControlPort 127.0.0.1:9051` and `CookieAuthentication 1`. The control port is bound to loopback only. The cookie file is written to `/var/lib/tor/control_auth_cookie`, which nyx reads as UID 65532.
+
+The runtime image rejects `TOR_CONTROL_PORT` with a clear error. Use the `-debug` tag when you set it.
+
+The debug variant is for monitoring and troubleshooting. Use the runtime image for production.
+
 ## Hardening
 
 The runtime image is intentionally minimal:
@@ -434,6 +465,8 @@ The runtime image is intentionally minimal:
 - Tor sandbox enabled by default.
 
 The image does not contain secrets. All configuration comes from environment variables and the `/var/lib/tor` volume.
+
+The debug variant uses the pinned Debian trixie-slim base with nyx and a shell. It keeps the same UID/GID, volume, and entrypoint, but it is larger and not distroless.
 
 ## Data and persistence
 
@@ -474,7 +507,7 @@ CI publishes these tags:
 - `latest`
 - `<version>-<YYYYMMDD>`, for example `0.4.9.17-20261116`
 
-The `-debug` variant will use the same tags with a `-debug` suffix once the debug image is implemented.
+The debug variant publishes the same tags with a `-debug` suffix, for example `0.4.9.17-debug`, `0.4.9-debug`, `latest-debug`, and `0.4.9.17-20261116-debug`.
 
 ## Verifying signatures
 
@@ -563,13 +596,15 @@ actionlint
 - `TOR_EXTRA_ARGS contains an empty entry`: remove the extra semicolon between entries.
 - `TOR_EXTRA_ARGS must be a single line`: separate entries with semicolons, not newlines.
 - `TOR_DNS_RESOLV_CONF must be a single line`: use one path to a resolver file.
+- `TOR_CONTROL_PORT is only allowed in the debug image variant`: use the `-debug` tag, or remove `TOR_CONTROL_PORT` from the env file.
+- `nyx: unable to connect`: check that tor is running, `TOR_CONTROL_PORT` is set, and `/var/lib/tor/control_auth_cookie` exists.
 - The container exits immediately: run `torinit verify` with the same env file. The error message names the invalid variable or value.
 - `exec: "/bin/sh": stat /bin/sh: no such file or directory`: expected. The runtime image has no shell. Use `torinit` subcommands or `docker exec` with the torinit binary.
 - Healthcheck is unhealthy: check the tor log and the PID file at `/var/lib/tor/.torinit/pid`.
 
 ## Roadmap
 
-- Phase 2: debug variant with nyx, metrics.
+- Phase 2: metrics.
 - Phase 3: systemd migration guide, family keys guide, auto-update guide, security policy, changelog.
 
 ## Security
