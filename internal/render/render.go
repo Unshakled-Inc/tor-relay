@@ -65,9 +65,19 @@ func Render(cfg *config.Config, dataDir string, includeTorrcD bool) string {
 	if cfg.MyFamilyURL != "" {
 		fmt.Fprintf(&b, "%%include %s\n", filepath.Join(dataDir, ".torinit", "family.conf"))
 	}
-	b.WriteString("ExitRelay 0\n")
-	b.WriteString("ExitPolicy reject *:*\n")
-	b.WriteString("ExitPolicy reject6 *:*\n")
+	if cfg.Role == config.RoleExit {
+		b.WriteString("ExitRelay 1\n")
+		for _, policy := range cfg.ExitPolicy {
+			fmt.Fprintf(&b, "ExitPolicy %s\n", policy)
+		}
+		if cfg.ExitIPv6 {
+			b.WriteString("IPv6Exit 1\n")
+		}
+	} else {
+		b.WriteString("ExitRelay 0\n")
+		b.WriteString("ExitPolicy reject *:*\n")
+		b.WriteString("ExitPolicy reject6 *:*\n")
+	}
 	sandbox := "0"
 	if cfg.Sandbox {
 		sandbox = "1"

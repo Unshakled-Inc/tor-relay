@@ -2,7 +2,7 @@
 
 Hardened, signed, multi-arch Docker image for Tor relay and bridge operators, published by Unshakled Inc. Tor is compiled from the signed upstream source tarball, never from distro packages.
 
-Status: the middle relay role, family keys, and MyFamily are available now. Exit, obfs4 bridge, WebTunnel, the debug variant, and metrics are in progress.
+Status: the middle and exit relay roles, family keys, and MyFamily are available now. obfs4 bridge, WebTunnel, the debug variant, and metrics are in progress.
 
 ## What the image provides
 
@@ -106,11 +106,11 @@ The repository also has `examples/middle/compose.yml`, which uses `tor-relay:dev
 | Role | Status | Required variables |
 | --- | --- | --- |
 | `middle` | available | `TOR_ROLE=middle`, `TOR_NICKNAME`, `TOR_CONTACT` |
-| `exit` | planned | `TOR_ROLE=exit`, `I_UNDERSTAND_EXIT=true`, `TOR_EXIT_POLICY` |
+| `exit` | available | `TOR_ROLE=exit`, `I_UNDERSTAND_EXIT=true`, and `TOR_EXIT_POLICY` or an `ExitPolicy` line in `/etc/tor/torrc.d/*.conf` |
 | `bridge` | planned | `TOR_ROLE=bridge`, `TOR_OBFS4_PORT` |
 | `webtunnel` | planned | `TOR_ROLE=webtunnel`, `TOR_WEBTUNNEL_URL` |
 
-Only `middle` is accepted by the current release. Any other `TOR_ROLE` exits non-zero with a clear message.
+Only `middle` and `exit` are accepted by the current release. Any other `TOR_ROLE` exits non-zero with a clear message.
 
 ## Configuration reference
 
@@ -118,7 +118,7 @@ The current release supports these variables:
 
 | Variable | Required | Default | Rule |
 | --- | --- | --- | --- |
-| `TOR_ROLE` | yes | | Only `middle` is supported now |
+| `TOR_ROLE` | yes | | `middle` or `exit` |
 | `TOR_NICKNAME` | yes | | `^[A-Za-z0-9]{1,19}$` |
 | `TOR_CONTACT` | yes | | Non-empty, single line |
 | `TOR_ORPORT` | no | `9001` | 1 to 65535 |
@@ -133,6 +133,9 @@ The current release supports these variables:
 | `TOR_MYFAMILY_URL` | no | | https URL to a fingerprint list, one per line |
 | `TOR_MYFAMILY_REFRESH` | no | `1h` | Refresh interval, minimum `10m` |
 | `TOR_MYFAMILY_MAX_DROP_PCT` | no | `20` | 0 to 100, maximum percent of entries that may disappear in one update |
+| `I_UNDERSTAND_EXIT` | exit only | | Must be exactly `true` |
+| `TOR_EXIT_POLICY` | exit, unless set in `torrc.d` | | Semicolon-separated exit policy entries, rendered as `ExitPolicy` lines |
+| `TOR_EXIT_IPV6` | no | `0` | `0` or `1`, renders `IPv6Exit 1` when set |
 
 Any other variable starting with `TOR_` is rejected with an error naming it. This catches typos instead of silently ignoring them.
 
@@ -156,6 +159,8 @@ ExitPolicy reject *:*
 ExitPolicy reject6 *:*
 Sandbox 1
 ```
+
+For `TOR_ROLE=exit`, `ExitRelay 1` replaces `ExitRelay 0`, the middle relay reject policies are not added, and each `TOR_EXIT_POLICY` entry becomes an `ExitPolicy` line. `TOR_EXIT_IPV6=1` adds `IPv6Exit 1`.
 
 If `/etc/tor/torrc.d/` exists and contains at least one `*.conf` file, torinit appends:
 
@@ -281,6 +286,31 @@ In URL mode:
 - When the content changes, `family.conf` is rewritten and tor receives `SIGHUP`, which reloads the family list.
 
 Do not set `MyFamily` on a bridge. Tor's man page recommends it for relays only, because listing other relays would reveal them.
+
+## Exit relay
+
+An exit relay forwards traffic from the Tor network to the internet. Run it on a dedicated host, and read the Tor Project's exit relay guidelines before you start:
+
+https://community.torproject.org/relay/setup/exit/
+
+Set the role and acknowledge the exit behavior:
+
+```
+TOR_ROLE=exit
+I_UNDERSTAND_EXIT=true
+```
+
+Provide an exit policy either in the env file or in a `torrc.d` file. The env value is semicolon-separated and each entry becomes one `ExitPolicy` line:
+
+```
+TOR_EXIT_POLICY=accept *:80;accept *:443;reject *:*
+```
+
+The image does not add a default exit policy. If `TOR_EXIT_POLICY` is empty, `torinit` looks for an `ExitPolicy` line in `/etc/tor/torrc.d/*.conf`. If neither exists, the container exits with an error.
+
+`TOR_EXIT_IPV6=1` adds `IPv6Exit 1`.
+
+See `examples/exit/` for a minimal configuration.
 
 ## Hardening
 
@@ -410,13 +440,15 @@ actionlint
 - `TOR_MYFAMILY and TOR_MYFAMILY_URL cannot both be set`: pick direct mode or URL mode, not both.
 - `myfamily: startup fetch failed`: tor still starts. Check the URL, DNS, and outbound https access. An existing `family.conf` is kept; otherwise the file is empty until the next successful refresh.
 - `myfamily: refresh failed: refusing update`: the fetched list was empty or dropped too many entries. Check the file at `TOR_MYFAMILY_URL`. Raise `TOR_MYFAMILY_MAX_DROP_PCT` only if the drop is intentional.
+- `TOR_ROLE=exit requires I_UNDERSTAND_EXIT=true`: set `I_UNDERSTAND_EXIT=true` in the env file. The value must be exactly `true`.
+- `TOR_ROLE=exit requires TOR_EXIT_POLICY or an ExitPolicy line in /etc/tor/torrc.d/*.conf`: add an exit policy to the env file or to a `*.conf` file in the torrc.d directory.
 - The container exits immediately: run `torinit verify` with the same env file. The error message names the invalid variable or value.
 - `exec: "/bin/sh": stat /bin/sh: no such file or directory`: expected. The runtime image has no shell. Use `torinit` subcommands or `docker exec` with the torinit binary.
 - Healthcheck is unhealthy: check the tor log and the PID file at `/var/lib/tor/.torinit/pid`.
 
 ## Roadmap
 
-- Phase 2: exit role, obfs4 bridge with lyrebird, WebTunnel, debug variant with nyx, metrics.
+- Phase 2: obfs4 bridge with lyrebird, WebTunnel, debug variant with nyx, metrics.
 - Phase 3: systemd migration guide, family keys guide, auto-update guide, security policy, changelog.
 
 ## Security

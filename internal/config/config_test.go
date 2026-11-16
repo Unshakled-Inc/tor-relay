@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -134,6 +136,98 @@ func TestLoadMyFamilyURL(t *testing.T) {
 	}
 }
 
+func TestLoadExit(t *testing.T) {
+	cfg, err := Load([]string{
+		"TOR_ROLE=exit",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+		"I_UNDERSTAND_EXIT=true",
+		"TOR_EXIT_POLICY=accept 80;accept 443;reject *:*",
+		"TOR_EXIT_IPV6=1",
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Role != RoleExit {
+		t.Errorf("Role = %q, want exit", cfg.Role)
+	}
+	want := []string{"accept 80", "accept 443", "reject *:*"}
+	if len(cfg.ExitPolicy) != len(want) {
+		t.Fatalf("ExitPolicy = %v, want %v", cfg.ExitPolicy, want)
+	}
+	for i := range want {
+		if cfg.ExitPolicy[i] != want[i] {
+			t.Errorf("ExitPolicy[%d] = %q, want %q", i, cfg.ExitPolicy[i], want[i])
+		}
+	}
+	if !cfg.ExitIPv6 {
+		t.Error("ExitIPv6 = false, want true")
+	}
+
+	defaults, err := Load([]string{
+		"TOR_ROLE=exit",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+		"I_UNDERSTAND_EXIT=true",
+		"TOR_EXIT_POLICY=accept 443",
+	})
+	if err != nil {
+		t.Fatalf("Load defaults: %v", err)
+	}
+	if defaults.ExitIPv6 {
+		t.Error("ExitIPv6 = true, want false by default")
+	}
+}
+
+func TestValidateExitPolicy(t *testing.T) {
+	dir := t.TempDir()
+
+	withEnv := &Config{Role: RoleExit, ExitPolicy: []string{"accept 443"}}
+	if err := ValidateExitPolicy(withEnv, dir); err != nil {
+		t.Fatalf("env policy: %v", err)
+	}
+
+	noPolicy := &Config{Role: RoleExit}
+	if err := ValidateExitPolicy(noPolicy, dir); err == nil {
+		t.Fatal("want error for an exit relay without a policy")
+	} else if !strings.Contains(err.Error(), "requires TOR_EXIT_POLICY") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "exit.conf"), []byte("# comment\nExitPolicy accept 80\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateExitPolicy(noPolicy, dir); err != nil {
+		t.Fatalf("torrc.d policy: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "exit.conf"), []byte("# ExitPolicy accept 80\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateExitPolicy(noPolicy, dir); err == nil {
+		t.Fatal("commented ExitPolicy should not count")
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "exit.conf"), []byte("ExitPolicy\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateExitPolicy(noPolicy, dir); err == nil {
+		t.Fatal("ExitPolicy without a value should not count")
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("ExitPolicy accept 80\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateExitPolicy(noPolicy, dir); err == nil {
+		t.Fatal("only *.conf files should count")
+	}
+
+	middle := &Config{Role: RoleMiddle}
+	if err := ValidateExitPolicy(middle, dir); err != nil {
+		t.Fatalf("middle relay: %v", err)
+	}
+}
+
 func TestLoadRejects(t *testing.T) {
 	base := []string{
 		"TOR_ROLE=middle",
@@ -147,7 +241,7 @@ func TestLoadRejects(t *testing.T) {
 		want string
 	}{
 		{"missing role", []string{"TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com"}, "TOR_ROLE is required"},
-		{"bad role", append(base[:0:0], "TOR_ROLE=exit", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com"), `TOR_ROLE "exit" is not supported in v0`},
+		{"bad role", append(base[:0:0], "TOR_ROLE=bridge", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com"), `TOR_ROLE "bridge" is not supported`},
 		{"missing nickname", []string{"TOR_ROLE=middle", "TOR_CONTACT=test@example.com"}, "TOR_NICKNAME is required"},
 		{"empty nickname", []string{"TOR_ROLE=middle", "TOR_NICKNAME=", "TOR_CONTACT=test@example.com"}, "TOR_NICKNAME is required"},
 		{"long nickname", []string{"TOR_ROLE=middle", "TOR_NICKNAME=12345678901234567890", "TOR_CONTACT=test@example.com"}, "must match"},
@@ -209,6 +303,26 @@ func TestLoadRejects(t *testing.T) {
 			"myfamily drop pct text",
 			[]string{"TOR_ROLE=middle", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_MYFAMILY_URL=https://example.com/family.txt", "TOR_MYFAMILY_MAX_DROP_PCT=lots"},
 			`TOR_MYFAMILY_MAX_DROP_PCT "lots" is not a number`,
+		},
+		{
+			"exit without ack",
+			[]string{"TOR_ROLE=exit", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "TOR_EXIT_POLICY=accept 443"},
+			"TOR_ROLE=exit requires I_UNDERSTAND_EXIT=true",
+		},
+		{
+			"exit with wrong ack",
+			[]string{"TOR_ROLE=exit", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "I_UNDERSTAND_EXIT=1", "TOR_EXIT_POLICY=accept 443"},
+			"TOR_ROLE=exit requires I_UNDERSTAND_EXIT=true",
+		},
+		{
+			"exit bad ipv6",
+			[]string{"TOR_ROLE=exit", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "I_UNDERSTAND_EXIT=true", "TOR_EXIT_POLICY=accept 443", "TOR_EXIT_IPV6=yes"},
+			`TOR_EXIT_IPV6 "yes" must be 0 or 1`,
+		},
+		{
+			"exit empty policy entry",
+			[]string{"TOR_ROLE=exit", "TOR_NICKNAME=TestRelay", "TOR_CONTACT=test@example.com", "I_UNDERSTAND_EXIT=true", "TOR_EXIT_POLICY=accept 80;;reject *:*"},
+			"TOR_EXIT_POLICY contains an empty entry",
 		},
 	}
 

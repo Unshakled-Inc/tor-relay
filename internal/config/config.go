@@ -3,13 +3,18 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
 
-const RoleMiddle = "middle"
+const (
+	RoleMiddle = "middle"
+	RoleExit   = "exit"
+)
 
 var nicknameRE = regexp.MustCompile(`^[A-Za-z0-9]{1,19}$`)
 var familyIDRE = regexp.MustCompile(`^[A-Za-z0-9+/]+={0,2}$`)
@@ -31,6 +36,8 @@ var allowed = map[string]bool{
 	"TOR_MYFAMILY_URL":          true,
 	"TOR_MYFAMILY_REFRESH":      true,
 	"TOR_MYFAMILY_MAX_DROP_PCT": true,
+	"TOR_EXIT_POLICY":           true,
+	"TOR_EXIT_IPV6":             true,
 }
 
 var logLevels = map[string]bool{
@@ -58,6 +65,8 @@ type Config struct {
 	MyFamilyURL        string
 	MyFamilyRefresh    time.Duration
 	MyFamilyMaxDropPct int
+	ExitPolicy         []string
+	ExitIPv6           bool
 }
 
 // Load parses and validates a list of KEY=VALUE environment entries.
@@ -80,8 +89,13 @@ func Load(environ []string) (*Config, error) {
 	if role == "" {
 		return nil, fmt.Errorf("TOR_ROLE is required")
 	}
-	if role != RoleMiddle {
-		return nil, fmt.Errorf("TOR_ROLE %q is not supported in v0, only %q", role, RoleMiddle)
+	switch role {
+	case RoleMiddle, RoleExit:
+	default:
+		return nil, fmt.Errorf("TOR_ROLE %q is not supported, use %q or %q", role, RoleMiddle, RoleExit)
+	}
+	if role == RoleExit && values["I_UNDERSTAND_EXIT"] != "true" {
+		return nil, fmt.Errorf("TOR_ROLE=exit requires I_UNDERSTAND_EXIT=true")
 	}
 
 	nickname := values["TOR_NICKNAME"]
@@ -221,6 +235,32 @@ func Load(environ []string) (*Config, error) {
 		myFamilyMaxDropPct = n
 	}
 
+	exitPolicy := []string{}
+	if value := values["TOR_EXIT_POLICY"]; value != "" {
+		if strings.ContainsAny(value, "\r\n") {
+			return nil, fmt.Errorf("TOR_EXIT_POLICY must be a single line")
+		}
+		for _, policy := range strings.Split(value, ";") {
+			policy = strings.TrimSpace(policy)
+			if policy == "" {
+				return nil, fmt.Errorf("TOR_EXIT_POLICY contains an empty entry")
+			}
+			exitPolicy = append(exitPolicy, policy)
+		}
+	}
+
+	exitIPv6 := false
+	if value := values["TOR_EXIT_IPV6"]; value != "" {
+		switch value {
+		case "0":
+			exitIPv6 = false
+		case "1":
+			exitIPv6 = true
+		default:
+			return nil, fmt.Errorf("TOR_EXIT_IPV6 %q must be 0 or 1", value)
+		}
+	}
+
 	return &Config{
 		Role:               role,
 		Nickname:           nickname,
@@ -237,5 +277,49 @@ func Load(environ []string) (*Config, error) {
 		MyFamilyURL:        myFamilyURL,
 		MyFamilyRefresh:    myFamilyRefresh,
 		MyFamilyMaxDropPct: myFamilyMaxDropPct,
+		ExitPolicy:         exitPolicy,
+		ExitIPv6:           exitIPv6,
 	}, nil
+}
+
+// ValidateExitPolicy requires an exit relay to have an exit policy, either
+// from TOR_EXIT_POLICY or from an ExitPolicy line in a *.conf file under
+// torrcDDir. Middle relays are not checked.
+func ValidateExitPolicy(cfg *Config, torrcDDir string) error {
+	if cfg.Role != RoleExit {
+		return nil
+	}
+	if len(cfg.ExitPolicy) > 0 {
+		return nil
+	}
+	if hasExitPolicy(torrcDDir) {
+		return nil
+	}
+	return fmt.Errorf("TOR_ROLE=exit requires TOR_EXIT_POLICY or an ExitPolicy line in %s/*.conf", torrcDDir)
+}
+
+func hasExitPolicy(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".conf") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "ExitPolicy") {
+				continue
+			}
+			if len(strings.Fields(line)) >= 2 {
+				return true
+			}
+		}
+	}
+	return false
 }

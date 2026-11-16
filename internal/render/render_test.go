@@ -69,6 +69,29 @@ func TestGolden(t *testing.T) {
 			},
 			file: "middle-myfamily-url.torrc",
 		},
+		{
+			name: "exit policy",
+			env: []string{
+				"TOR_ROLE=exit",
+				"TOR_NICKNAME=TestRelay",
+				"TOR_CONTACT=test@example.com",
+				"I_UNDERSTAND_EXIT=true",
+				"TOR_EXIT_POLICY=accept 80;accept 443;reject *:*",
+			},
+			file: "exit-policy.torrc",
+		},
+		{
+			name: "exit ipv6",
+			env: []string{
+				"TOR_ROLE=exit",
+				"TOR_NICKNAME=TestRelay",
+				"TOR_CONTACT=test@example.com",
+				"I_UNDERSTAND_EXIT=true",
+				"TOR_EXIT_POLICY=accept 80;accept 443;reject *:*",
+				"TOR_EXIT_IPV6=1",
+			},
+			file: "exit-ipv6.torrc",
+		},
 	}
 
 	for _, tc := range tests {
@@ -127,6 +150,28 @@ func TestRenderMyFamilyStatic(t *testing.T) {
 	}
 	if strings.Contains(got, "%include /var/lib/tor/.torinit/family.conf") {
 		t.Fatalf("static mode rendered the family include:\n%s", got)
+	}
+}
+
+func TestRenderExitWithoutEnvPolicy(t *testing.T) {
+	cfg, err := config.Load([]string{
+		"TOR_ROLE=exit",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+		"I_UNDERSTAND_EXIT=true",
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := Render(cfg, "/var/lib/tor", true)
+	if !strings.Contains(got, "ExitRelay 1\n") {
+		t.Fatalf("missing ExitRelay 1:\n%s", got)
+	}
+	if strings.Contains(got, "ExitPolicy reject *:*") {
+		t.Fatalf("rendered a default exit policy:\n%s", got)
+	}
+	if !strings.HasSuffix(got, "%include /etc/tor/torrc.d/\n") {
+		t.Fatalf("missing torrc.d include:\n%s", got)
 	}
 }
 

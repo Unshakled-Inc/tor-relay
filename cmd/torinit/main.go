@@ -58,6 +58,14 @@ func loadConfig() (*config.Config, bool) {
 	return cfg, true
 }
 
+func validateRole(cfg *config.Config) bool {
+	if err := config.ValidateExitPolicy(cfg, render.TorrcD); err != nil {
+		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
+		return false
+	}
+	return true
+}
+
 func discoverAndValidateFamily(cfg *config.Config) ([]keys.KeyFile, bool) {
 	keyFiles, err := keys.Discover(cfg.FamilyKeyDir, len(cfg.FamilyID) > 0)
 	if err != nil {
@@ -80,6 +88,9 @@ func renderCmd(args []string) int {
 	if !ok {
 		return 1
 	}
+	if !validateRole(cfg) {
+		return 1
+	}
 	fmt.Print(render.Render(cfg, dataDir, render.IncludeTorrcD(render.TorrcD)))
 	return 0
 }
@@ -91,6 +102,9 @@ func verifyCmd(args []string) int {
 	}
 	cfg, ok := loadConfig()
 	if !ok {
+		return 1
+	}
+	if !validateRole(cfg) {
 		return 1
 	}
 	if _, ok := discoverAndValidateFamily(cfg); !ok {
@@ -136,6 +150,9 @@ func verifyCmd(args []string) int {
 func runCmd() int {
 	cfg, ok := loadConfig()
 	if !ok {
+		return 1
+	}
+	if !validateRole(cfg) {
 		return 1
 	}
 	keyFiles, ok := discoverAndValidateFamily(cfg)
