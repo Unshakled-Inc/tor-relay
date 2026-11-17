@@ -29,7 +29,8 @@ versioned with the image until its first standalone release.
   `*.secret_family_key`, and rendered as `FamilyId` lines.
 - `MyFamily` direct mode and https URL mode, with atomic writes, refresh,
   drop protection, own-fingerprint exclusion, and `SIGHUP` reload.
-- `-debug` image variant with nyx, a shell, and `TOR_CONTROL_PORT`.
+- `-debug` image variant with nyx, a shell, and `TOR_CONTROL_PORT`, published
+  as the moving `latest-debug` tag.
 - Prometheus metrics through `TOR_METRICS_PORT`, `TOR_METRICS_POLICY`, and
   `TOR_METRICS_PUBLIC`, with a `reject *` fallback.
 - `TOR_EXTRA_ARGS` for arbitrary torrc lines and `TOR_DNS_RESOLV_CONF` for a

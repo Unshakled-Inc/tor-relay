@@ -277,7 +277,7 @@ CI publishes these tags:
 - `latest`
 - `<version>-<YYYYMMDD>`, for example `0.4.9.17-20261116`
 
-The debug variant publishes the same tags with a `-debug` suffix, for example `0.4.9.17-debug`, `0.4.9-debug`, `latest-debug`, and `0.4.9.17-20261116-debug`.
+The debug variant publishes one moving tag, `latest-debug`. It is a troubleshooting tool, not a pinned release artifact. Use the versioned runtime tags when you need a reproducible release.
 
 See [CHANGELOG.md](https://github.com/Unshakled-Inc/tor-relay/blob/main/CHANGELOG.md) for the release history.
 
@@ -551,7 +551,7 @@ Cloudflare proxy and Cloudflare Tunnel work in front of this bridge. If Cloudfla
 
 The debug image adds nyx and a shell to the same tor and pluggable transport binaries. It uses the pinned Debian trixie-slim base, not distroless.
 
-Use the `-debug` tag and set the control port:
+Use the `latest-debug` tag and set the control port:
 
 ```
 docker run --rm -it --name tor-debug \
@@ -570,7 +570,7 @@ docker exec -it tor-debug nyx
 
 `TOR_CONTROL_PORT=9051` renders `ControlPort 127.0.0.1:9051` and `CookieAuthentication 1`. The control port is bound to loopback only. The cookie file is written to `/var/lib/tor/control_auth_cookie`, which nyx reads as UID 65532.
 
-The runtime image rejects `TOR_CONTROL_PORT` with a clear error. Use the `-debug` tag when you set it.
+The runtime image rejects `TOR_CONTROL_PORT` with a clear error. Use `latest-debug` when you set it.
 
 The debug variant is for monitoring and troubleshooting. Use the runtime image for production.
 
@@ -698,7 +698,7 @@ Replace the table between the envdoc start and end markers with the output. CI c
 - `TOR_EXTRA_ARGS contains an empty entry`: remove the extra semicolon between entries.
 - `TOR_EXTRA_ARGS must be a single line`: separate entries with semicolons, not newlines.
 - `TOR_DNS_RESOLV_CONF must be a single line`: use one path to a resolver file.
-- `TOR_CONTROL_PORT is only allowed in the debug image variant`: use the `-debug` tag, or remove `TOR_CONTROL_PORT` from the env file.
+- `TOR_CONTROL_PORT is only allowed in the debug image variant`: use `latest-debug`, or remove `TOR_CONTROL_PORT` from the env file.
 - `nyx: unable to connect`: check that tor is running, `TOR_CONTROL_PORT` is set, and `/var/lib/tor/control_auth_cookie` exists.
 - `TOR_METRICS_PORT requires TOR_METRICS_POLICY`: add a policy, for example `accept 10.0.0.0/8`.
 - `TOR_METRICS_POLICY requires TOR_METRICS_PORT`: remove the policy or set `TOR_METRICS_PORT`.
