@@ -524,9 +524,7 @@ jobs:
         run: |
           for ref in \
             docker.io/unshakled/tor-relay:latest \
-            docker.io/unshakled/tor-relay:latest-debug \
-            ghcr.io/unshakled-inc/tor-relay:latest \
-            ghcr.io/unshakled-inc/tor-relay:latest-debug; do
+            docker.io/unshakled/tor-relay:latest-debug; do
             provenance="$(docker buildx imagetools inspect "$ref" --format '{{json .Provenance}}')"
             if [ -z "$provenance" ] || [ "$provenance" = "{}" ]; then
               echo "missing provenance for $ref" >&2

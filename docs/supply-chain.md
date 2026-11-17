@@ -74,6 +74,9 @@ dependencies.
   exact workflow identity rather than a regular expression.
 - Docker Hub credentials live in the `release` environment, not in
   repository-wide secrets.
+- Provenance is asserted on the Docker Hub tags. The GHCR tag is assembled
+  from the platform manifests, so the attestations remain stored by digest
+  rather than referenced by the tag.
 
 ## Source of truth
 
