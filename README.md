@@ -4,7 +4,7 @@ Hardened, signed, multi-arch Docker image for Tor relay and bridge operators, pu
 
 Status: Phase 2 is complete. Middle, exit, obfs4 bridge, WebTunnel, family keys, MyFamily, the debug variant, and metrics are available.
 
-## What the image provides
+## What this image is
 
 - Tor built from the signed source release, with the signature checked against `keys/tor-release.asc` before compilation.
 - A distroless runtime on `gcr.io/distroless/cc-debian13`, with no shell and no package manager.
@@ -113,46 +113,49 @@ The repository also has `examples/middle/compose.yml`, which uses `tor-relay:dev
 | `bridge` | available | `TOR_ROLE=bridge`, `TOR_OBFS4_PORT` |
 | `webtunnel` | available | `TOR_ROLE=webtunnel`, `TOR_WEBTUNNEL_URL` |
 
-Only `middle`, `exit`, `bridge`, and `webtunnel` are accepted by the current release. Any other `TOR_ROLE` exits non-zero with a clear message.
+Only `middle`, `exit`, `bridge`, and `webtunnel` are accepted by the current release. Any other `TOR_ROLE` exits non-zero with a clear message. The detailed role sections are below the configuration reference.
 
 ## Configuration reference
 
 The current release supports these variables:
 
+<!-- envdoc:start -->
 | Variable | Required | Default | Rule |
 | --- | --- | --- | --- |
-| `TOR_ROLE` | yes | | `middle`, `exit`, `bridge`, or `webtunnel` |
-| `TOR_NICKNAME` | yes | | `^[A-Za-z0-9]{1,19}$` |
-| `TOR_CONTACT` | yes | | Non-empty, single line |
+| `TOR_ROLE` | yes |  | `middle`, `exit`, `bridge`, or `webtunnel` |
+| `TOR_NICKNAME` | yes |  | `^[A-Za-z0-9]{1,19}$` |
+| `TOR_CONTACT` | yes |  | Non-empty, single line |
 | `TOR_ORPORT` | no | `9001` | 1 to 65535 |
-| `TOR_ADDRESS` | no | | Passed through to `Address` |
-| `TOR_BANDWIDTH_RATE` | no | | Passed to `RelayBandwidthRate`, for example `50 MBytes` |
-| `TOR_BANDWIDTH_BURST` | no | | Passed to `RelayBandwidthBurst` |
-| `TOR_SANDBOX` | no | `1` | `0` or `1` |
+| `TOR_ADDRESS` | no |  | Passed through to `Address` |
+| `TOR_BANDWIDTH_RATE` | no |  | Passed to `RelayBandwidthRate`, for example `50 MBytes` |
+| `TOR_BANDWIDTH_BURST` | no |  | Passed to `RelayBandwidthBurst` |
+| `TOR_SANDBOX` | no | `1` for middle and exit, `0` for bridge and webtunnel | `0` or `1` |
 | `TOR_LOG_LEVEL` | no | `notice` | `debug`, `info`, `notice`, `warn`, or `err` |
-| `TOR_FAMILY_ID` | no | | One or more space-separated family IDs from `keygen-family` |
+| `TOR_FAMILY_ID` | no |  | One or more space-separated family IDs from `keygen-family` |
 | `TOR_FAMILY_KEY_DIR` | no | `/run/secrets` | Directory containing family key files |
-| `TOR_MYFAMILY` | no | | Comma-separated 40-hex fingerprints, optional `$` prefix |
-| `TOR_MYFAMILY_URL` | no | | https URL to a fingerprint list, one per line |
+| `TOR_MYFAMILY` | no |  | Comma-separated 40-hex fingerprints, optional `$` prefix |
+| `TOR_MYFAMILY_URL` | no |  | https URL to a fingerprint list, one per line |
 | `TOR_MYFAMILY_REFRESH` | no | `1h` | Refresh interval, minimum `10m` |
 | `TOR_MYFAMILY_MAX_DROP_PCT` | no | `20` | 0 to 100, maximum percent of entries that may disappear in one update |
-| `I_UNDERSTAND_EXIT` | exit only | | Must be exactly `true` |
-| `TOR_EXIT_POLICY` | exit, unless set in `torrc.d` | | Semicolon-separated exit policy entries, rendered as `ExitPolicy` lines |
+| `I_UNDERSTAND_EXIT` | exit only |  | Must be exactly `true` |
+| `TOR_EXIT_POLICY` | exit, unless set in `torrc.d` |  | Semicolon-separated exit policy entries, rendered as `ExitPolicy` lines |
 | `TOR_EXIT_IPV6` | no | `0` | `0` or `1`, renders `IPv6Exit 1` when set |
-| `TOR_OBFS4_PORT` | bridge only | | 1 to 65535, must differ from `TOR_ORPORT` |
+| `TOR_OBFS4_PORT` | bridge only |  | 1 to 65535, must differ from `TOR_ORPORT` |
 | `TOR_BRIDGE_DISTRIBUTION` | no | `any` | `any`, `none`, `https`, `email`, or `settings` |
-| `TOR_WEBTUNNEL_URL` | webtunnel only | | https URL with a host; the path may be `/` for a dedicated domain |
+| `TOR_WEBTUNNEL_URL` | webtunnel only |  | https URL with a host; the path may be `/` for a dedicated domain |
 | `TOR_WEBTUNNEL_LISTEN` | no | `127.0.0.1:15000` | host:port for the webtunnel listener |
-| `TOR_DNS_RESOLV_CONF` | no | | Path rendered as `ServerDNSResolvConfFile`, mainly for exit relays |
-| `TOR_EXTRA_ARGS` | no | | Semicolon-separated torrc lines, rendered verbatim at the end |
-| `TOR_CONTROL_PORT` | no | | Debug image only, 1 to 65535; renders `ControlPort 127.0.0.1:<port>` and `CookieAuthentication 1` |
-| `TOR_METRICS_PORT` | no | | host:port for the Prometheus endpoint, requires `TOR_METRICS_POLICY` |
-| `TOR_METRICS_POLICY` | no | | Policy for `MetricsPort`, rendered with a `reject *` fallback |
+| `TOR_DNS_RESOLV_CONF` | no |  | Path rendered as `ServerDNSResolvConfFile`, mainly for exit relays |
+| `TOR_EXTRA_ARGS` | no |  | Semicolon-separated torrc lines, rendered verbatim at the end |
+| `TOR_CONTROL_PORT` | debug only |  | 1 to 65535; renders `ControlPort 127.0.0.1:<port>` and `CookieAuthentication 1` |
+| `TOR_METRICS_PORT` | no |  | host:port for the Prometheus endpoint, requires `TOR_METRICS_POLICY` |
+| `TOR_METRICS_POLICY` | no |  | Policy for `MetricsPort`, rendered with a `reject *` fallback |
 | `TOR_METRICS_PUBLIC` | no | `0` | `0` or `1`; required when the policy is exactly `accept *` |
+| `TORINIT_VARIANT` | no | `runtime` | Set by the image to `runtime` or `debug`. Do not set manually. |
+<!-- envdoc:end -->
 
 Any other variable starting with `TOR_` is rejected with an error naming it. This catches typos instead of silently ignoring them.
 
-`TOR_SANDBOX=1` enables tor's seccomp sandbox. It is the default. Set it to `0` only if you are debugging a sandbox-related failure.
+`TOR_SANDBOX=1` enables tor's seccomp sandbox. It is the default for middle and exit relays. It defaults to `0` for obfs4 and WebTunnel bridges because tor 0.4.9.17 reports that managed proxies are not compatible with Sandbox mode.
 
 ### Extra torrc options
 
@@ -230,6 +233,7 @@ The image entrypoint is `torinit`. The current subcommands are:
 - `healthcheck`: read the PID file and exit 0 only if `/proc/<pid>` exists.
 - `keygen-family`: generate a family key in `/out` or the directory given by `--out`, print the `FamilyId` line, and refuse to overwrite an existing key unless `--force` is set.
 - `bridgeline`: print the obfs4 client bridge line from `/var/lib/tor/pt_state/obfs4_bridgeline.txt`, with the fingerprint filled in from `/var/lib/tor/fingerprint`.
+- `envdoc`: print the environment variable reference as a markdown table.
 
 Examples:
 
@@ -237,9 +241,69 @@ Examples:
 docker run --rm --env-file .env docker.io/unshakled/tor-relay:latest render
 docker run --rm --env-file .env docker.io/unshakled/tor-relay:latest verify
 docker run --rm docker.io/unshakled/tor-relay:latest version
+docker run --rm docker.io/unshakled/tor-relay:latest envdoc
 mkdir -p family
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/family:/out" docker.io/unshakled/tor-relay:latest keygen-family myfamily
 ```
+
+## Hardening
+
+The runtime image is intentionally minimal:
+
+- Distroless `cc-debian13` base, with no shell and no package manager.
+- UID/GID 65532, owned data directory, mode 0700.
+- Read-only root filesystem compatible.
+- All capabilities can be dropped.
+- `no-new-privileges` compatible.
+- Tor sandbox enabled by default for middle and exit relays.
+
+The image does not contain secrets. All configuration comes from environment variables and the `/var/lib/tor` volume.
+
+The debug variant uses the pinned Debian trixie-slim base with nyx and a shell. It keeps the same UID/GID, volume, and entrypoint, but it is larger and not distroless.
+
+## Tags and update cadence
+
+CI publishes these tags:
+
+- `<version>`, for example `0.4.9.17`
+- `<series>`, for example `0.4.9`
+- `latest`
+- `<version>-<YYYYMMDD>`, for example `0.4.9.17-20261116`
+
+The debug variant publishes the same tags with a `-debug` suffix, for example `0.4.9.17-debug`, `0.4.9-debug`, `latest-debug`, and `0.4.9.17-20261116-debug`.
+
+Update cadence:
+
+- The release watcher checks `dist.torproject.org` every six hours and starts a build when a new stable tor release is published.
+- The weekly job rebuilds the current version without cache to pick up Debian and distroless security updates.
+- To update a deployment, pull the new image and recreate the container:
+
+```
+docker pull docker.io/unshakled/tor-relay:latest
+docker compose up -d
+```
+
+For a plain `docker run` deployment, stop and remove the old container, then start a new one with the same volume and env file.
+
+## Verifying signatures
+
+Images are signed by CI with keyless cosign. Verify the Docker Hub image with:
+
+```
+cosign verify docker.io/unshakled/tor-relay:latest \
+  --certificate-identity-regexp 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+For GHCR:
+
+```
+cosign verify ghcr.io/unshakled-inc/tor-relay:latest \
+  --certificate-identity-regexp 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+The signature covers the multi-arch manifest digest. SBOM and provenance attestations are generated by the build workflow.
 
 ## Family keys
 
@@ -289,6 +353,48 @@ The secret is mounted at `/run/secrets/myfamily`. `torinit` installs it as `myfa
 If `TOR_FAMILY_ID` is set and no key file is found, the container exits with an error. If a key file is present and `TOR_FAMILY_ID` is not set, it also exits with an error. This prevents a relay from silently losing its family membership.
 
 The `.public_family_id` file is not a secret. Keep it with the key file for reference and for publishing the ID to other operators.
+
+For rotation and publishing, see [docs/family-keys.md](https://github.com/Unshakled-Inc/tor-relay/blob/main/docs/family-keys.md).
+
+## Migrating from systemd
+
+To move an existing systemd relay onto the image:
+
+1. Back up the keys.
+2. Stop and disable the systemd tor service.
+3. Create the `/var/lib/tor` volume.
+4. Copy `keys/secret_id_key`, `keys/ed25519_master_id_secret_key`, and any `*.secret_family_key` into the volume, owned by 65532:65532 with mode 0600. The keys directory must be mode 0700.
+5. Start the container with the same nickname and ORPort.
+6. Confirm the fingerprint in `/var/lib/tor/fingerprint` matches the old fingerprint.
+7. Watch Relay Search for the relay staying Running.
+
+Never run both instances with the same keys at the same time.
+
+See [docs/migrate-from-systemd.md](https://github.com/Unshakled-Inc/tor-relay/blob/main/docs/migrate-from-systemd.md) for the full guide.
+
+## Auto-updating
+
+The recommended default is a systemd timer that runs `docker compose pull` and `docker compose up -d`. A label-scoped updater container also works, but it needs access to the Docker socket. Podman auto-update is supported.
+
+See [docs/auto-update.md](https://github.com/Unshakled-Inc/tor-relay/blob/main/docs/auto-update.md) for the complete unit and timer files.
+
+## Snowflake
+
+Snowflake is out of scope for this image. The Tor Project publishes an official Snowflake proxy image:
+
+```
+docker run --rm -d --name snowflake-proxy --restart unless-stopped thetorproject/snowflake-proxy:latest
+```
+
+See the Tor Project's Snowflake guide at https://community.torproject.org/relay/setup/snowflake/ and the image page at https://hub.docker.com/r/thetorproject/snowflake-proxy.
+
+## Reporting security issues
+
+Report security issues privately through GitHub private vulnerability reporting:
+
+https://github.com/Unshakled-Inc/tor-relay/security/advisories/new
+
+See [SECURITY.md](https://github.com/Unshakled-Inc/tor-relay/blob/main/SECURITY.md) for scope and response targets. The target is to publish a new image on the same day as a new upstream tor release. No secrets are baked into the image.
 
 ## MyFamily
 
@@ -486,21 +592,6 @@ TOR_METRICS_PUBLIC=1
 
 The tor man page warns that exposing metrics publicly is dangerous for Tor users. Use the narrowest policy you can.
 
-## Hardening
-
-The runtime image is intentionally minimal:
-
-- Distroless `cc-debian13` base, with no shell and no package manager.
-- UID/GID 65532, owned data directory, mode 0700.
-- Read-only root filesystem compatible.
-- All capabilities can be dropped.
-- `no-new-privileges` compatible.
-- Tor sandbox enabled by default.
-
-The image does not contain secrets. All configuration comes from environment variables and the `/var/lib/tor` volume.
-
-The debug variant uses the pinned Debian trixie-slim base with nyx and a shell. It keeps the same UID/GID, volume, and entrypoint, but it is larger and not distroless.
-
 ## Data and persistence
 
 `/var/lib/tor` holds the relay keys, the fingerprint, tor state, and the generated configuration under `.torinit/`.
@@ -517,50 +608,6 @@ The image declares `/var/lib/tor` as a volume. The runtime creates it with mode 
 The image defines a Docker healthcheck that runs `torinit healthcheck`. It reads `/var/lib/tor/.torinit/pid` and checks whether `/proc/<pid>` exists.
 
 This confirms that the tor process is alive. It does not confirm that the relay has bootstrapped or that the ORPort is reachable. Check the logs for `Bootstrapped 100%` and the relay's self-test results.
-
-## Updating
-
-Pull the new image and recreate the container:
-
-```
-docker pull docker.io/unshakled/tor-relay:latest
-docker compose up -d
-```
-
-For a plain `docker run` deployment, stop and remove the old container, then start a new one with the same volume and env file.
-
-The release watcher checks `dist.torproject.org` every six hours and starts a build when a new stable tor release is published. The weekly job rebuilds the current version without cache to pick up Debian and distroless security updates.
-
-## Tags
-
-CI publishes these tags:
-
-- `<version>`, for example `0.4.9.17`
-- `<series>`, for example `0.4.9`
-- `latest`
-- `<version>-<YYYYMMDD>`, for example `0.4.9.17-20261116`
-
-The debug variant publishes the same tags with a `-debug` suffix, for example `0.4.9.17-debug`, `0.4.9-debug`, `latest-debug`, and `0.4.9.17-20261116-debug`.
-
-## Verifying signatures
-
-Images are signed by CI with keyless cosign. Verify the Docker Hub image with:
-
-```
-cosign verify docker.io/unshakled/tor-relay:latest \
-  --certificate-identity-regexp 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/.*' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-```
-
-For GHCR:
-
-```
-cosign verify ghcr.io/unshakled-inc/tor-relay:latest \
-  --certificate-identity-regexp 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/.*' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-```
-
-The signature covers the multi-arch manifest digest. SBOM and provenance attestations are generated by the build workflow.
 
 ## Building from source
 
@@ -606,6 +653,14 @@ shellcheck scripts/*.sh
 actionlint
 ```
 
+The README environment table is generated by `torinit envdoc`. After changing the config package, run:
+
+```
+go run ./cmd/torinit envdoc
+```
+
+Replace the table between the envdoc start and end markers with the output. CI checks that the table matches.
+
 ## Troubleshooting
 
 - `Unable to find IPv4 address for ORPort`: set `TOR_ADDRESS` to the public address, or use host networking so tor can see the host interfaces.
@@ -643,15 +698,7 @@ actionlint
 ## Roadmap
 
 - Phase 2: complete.
-- Phase 3: systemd migration guide, family keys guide, auto-update guide, security policy, changelog.
-
-## Security
-
-Report security issues privately through GitHub private vulnerability reporting:
-
-`https://github.com/Unshakled-Inc/tor-relay/security/advisories/new`
-
-The target is to publish a new image on the same day as a new upstream tor release. No secrets are baked into the image.
+- Phase 3: operator docs, migration guides, security policy, and launch.
 
 ## License
 

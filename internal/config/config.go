@@ -100,6 +100,57 @@ type Config struct {
 	MetricsPublic      bool
 }
 
+// EnvVar describes one environment variable for the generated documentation.
+type EnvVar struct {
+	Name     string
+	Required string
+	Default  string
+	Rule     string
+}
+
+var envVars = []EnvVar{
+	{Name: "TOR_ROLE", Required: "yes", Default: "", Rule: "`middle`, `exit`, `bridge`, or `webtunnel`"},
+	{Name: "TOR_NICKNAME", Required: "yes", Default: "", Rule: "`^[A-Za-z0-9]{1,19}$`"},
+	{Name: "TOR_CONTACT", Required: "yes", Default: "", Rule: "Non-empty, single line"},
+	{Name: "TOR_ORPORT", Required: "no", Default: "`9001`", Rule: "1 to 65535"},
+	{Name: "TOR_ADDRESS", Required: "no", Default: "", Rule: "Passed through to `Address`"},
+	{Name: "TOR_BANDWIDTH_RATE", Required: "no", Default: "", Rule: "Passed to `RelayBandwidthRate`, for example `50 MBytes`"},
+	{Name: "TOR_BANDWIDTH_BURST", Required: "no", Default: "", Rule: "Passed to `RelayBandwidthBurst`"},
+	{Name: "TOR_SANDBOX", Required: "no", Default: "`1` for middle and exit, `0` for bridge and webtunnel", Rule: "`0` or `1`"},
+	{Name: "TOR_LOG_LEVEL", Required: "no", Default: "`notice`", Rule: "`debug`, `info`, `notice`, `warn`, or `err`"},
+	{Name: "TOR_FAMILY_ID", Required: "no", Default: "", Rule: "One or more space-separated family IDs from `keygen-family`"},
+	{Name: "TOR_FAMILY_KEY_DIR", Required: "no", Default: "`/run/secrets`", Rule: "Directory containing family key files"},
+	{Name: "TOR_MYFAMILY", Required: "no", Default: "", Rule: "Comma-separated 40-hex fingerprints, optional `$` prefix"},
+	{Name: "TOR_MYFAMILY_URL", Required: "no", Default: "", Rule: "https URL to a fingerprint list, one per line"},
+	{Name: "TOR_MYFAMILY_REFRESH", Required: "no", Default: "`1h`", Rule: "Refresh interval, minimum `10m`"},
+	{Name: "TOR_MYFAMILY_MAX_DROP_PCT", Required: "no", Default: "`20`", Rule: "0 to 100, maximum percent of entries that may disappear in one update"},
+	{Name: "I_UNDERSTAND_EXIT", Required: "exit only", Default: "", Rule: "Must be exactly `true`"},
+	{Name: "TOR_EXIT_POLICY", Required: "exit, unless set in `torrc.d`", Default: "", Rule: "Semicolon-separated exit policy entries, rendered as `ExitPolicy` lines"},
+	{Name: "TOR_EXIT_IPV6", Required: "no", Default: "`0`", Rule: "`0` or `1`, renders `IPv6Exit 1` when set"},
+	{Name: "TOR_OBFS4_PORT", Required: "bridge only", Default: "", Rule: "1 to 65535, must differ from `TOR_ORPORT`"},
+	{Name: "TOR_BRIDGE_DISTRIBUTION", Required: "no", Default: "`any`", Rule: "`any`, `none`, `https`, `email`, or `settings`"},
+	{Name: "TOR_WEBTUNNEL_URL", Required: "webtunnel only", Default: "", Rule: "https URL with a host; the path may be `/` for a dedicated domain"},
+	{Name: "TOR_WEBTUNNEL_LISTEN", Required: "no", Default: "`127.0.0.1:15000`", Rule: "host:port for the webtunnel listener"},
+	{Name: "TOR_DNS_RESOLV_CONF", Required: "no", Default: "", Rule: "Path rendered as `ServerDNSResolvConfFile`, mainly for exit relays"},
+	{Name: "TOR_EXTRA_ARGS", Required: "no", Default: "", Rule: "Semicolon-separated torrc lines, rendered verbatim at the end"},
+	{Name: "TOR_CONTROL_PORT", Required: "debug only", Default: "", Rule: "1 to 65535; renders `ControlPort 127.0.0.1:<port>` and `CookieAuthentication 1`"},
+	{Name: "TOR_METRICS_PORT", Required: "no", Default: "", Rule: "host:port for the Prometheus endpoint, requires `TOR_METRICS_POLICY`"},
+	{Name: "TOR_METRICS_POLICY", Required: "no", Default: "", Rule: "Policy for `MetricsPort`, rendered with a `reject *` fallback"},
+	{Name: "TOR_METRICS_PUBLIC", Required: "no", Default: "`0`", Rule: "`0` or `1`; required when the policy is exactly `accept *`"},
+	{Name: "TORINIT_VARIANT", Required: "no", Default: "`runtime`", Rule: "Set by the image to `runtime` or `debug`. Do not set manually."},
+}
+
+// EnvDoc returns the environment variable reference as a markdown table.
+func EnvDoc() string {
+	var b strings.Builder
+	b.WriteString("| Variable | Required | Default | Rule |\n")
+	b.WriteString("| --- | --- | --- | --- |\n")
+	for _, v := range envVars {
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n", v.Name, v.Required, v.Default, v.Rule)
+	}
+	return b.String()
+}
+
 // Load parses and validates a list of KEY=VALUE environment entries.
 // Any TOR_ variable that is not in the v0 set is rejected, so typos fail
 // loudly instead of being silently ignored.

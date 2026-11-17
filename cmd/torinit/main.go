@@ -46,6 +46,8 @@ func main() {
 		os.Exit(keygenFamilyCmd(args[1:]))
 	case "bridgeline":
 		os.Exit(bridgelineCmd(args[1:]))
+	case "envdoc":
+		os.Exit(envdocCmd(args[1:]))
 	default:
 		fmt.Fprintf(os.Stderr, "torinit: unknown subcommand %q\n", args[0])
 		os.Exit(2)
@@ -289,6 +291,15 @@ func bridgelineCmd(args []string) int {
 		return 1
 	}
 	fmt.Println(line)
+	return 0
+}
+
+func envdocCmd(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(os.Stderr, "torinit: envdoc takes no arguments")
+		return 2
+	}
+	fmt.Print(config.EnvDoc())
 	return 0
 }
 

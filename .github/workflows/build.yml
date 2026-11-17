@@ -149,6 +149,15 @@ jobs:
           no-cache: ${{ inputs.no_cache }}
       - name: version
         run: docker run --rm tor-relay:ci version
+      - name: check env documentation
+        if: ${{ matrix.artifact == 'amd64' }}
+        run: |
+          docker run --rm tor-relay:ci envdoc > envdoc.txt
+          awk 'BEGIN{done=0} /<!-- envdoc:start -->/ && !done {flag=1;next} /<!-- envdoc:end -->/ {flag=0;done=1} flag' README.md > readme-envdoc.txt
+          if ! diff -u readme-envdoc.txt envdoc.txt; then
+            echo "README environment table does not match torinit envdoc" >&2
+            exit 1
+          fi
       - name: verify middle example
         run: docker run --rm --env-file examples/middle/.env.example tor-relay:ci verify
       - name: verify bridge example

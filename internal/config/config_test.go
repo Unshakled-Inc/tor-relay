@@ -681,3 +681,18 @@ func TestLoadRejects(t *testing.T) {
 		})
 	}
 }
+
+func TestEnvDocMatchesAllowed(t *testing.T) {
+	documented := make(map[string]bool, len(envVars))
+	for _, v := range envVars {
+		documented[v.Name] = true
+		if strings.HasPrefix(v.Name, "TOR_") && !allowed[v.Name] {
+			t.Errorf("documented variable %s is not in allowed", v.Name)
+		}
+	}
+	for name := range allowed {
+		if !documented[name] {
+			t.Errorf("allowed variable %s is not documented", name)
+		}
+	}
+}
