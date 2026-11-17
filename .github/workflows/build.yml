@@ -505,10 +505,10 @@ jobs:
           ghcr_digest="$(docker buildx imagetools inspect ghcr.io/unshakled-inc/tor-relay:${{ needs.prepare.outputs.version }} --format '{{.Manifest.Digest}}')"
           hub_debug_digest="$(docker buildx imagetools inspect docker.io/unshakled/tor-relay:latest-debug --format '{{.Manifest.Digest}}')"
           ghcr_debug_digest="$(docker buildx imagetools inspect ghcr.io/unshakled-inc/tor-relay:latest-debug --format '{{.Manifest.Digest}}')"
-          cosign sign --yes "docker.io/unshakled/tor-relay@$hub_digest"
-          cosign sign --yes "ghcr.io/unshakled-inc/tor-relay@$ghcr_digest"
-          cosign sign --yes "docker.io/unshakled/tor-relay@$hub_debug_digest"
-          cosign sign --yes "ghcr.io/unshakled-inc/tor-relay@$ghcr_debug_digest"
+          cosign sign --yes --registry-referrers-mode legacy "docker.io/unshakled/tor-relay@$hub_digest"
+          cosign sign --yes --registry-referrers-mode legacy "ghcr.io/unshakled-inc/tor-relay@$ghcr_digest"
+          cosign sign --yes --registry-referrers-mode legacy "docker.io/unshakled/tor-relay@$hub_debug_digest"
+          cosign sign --yes --registry-referrers-mode legacy "ghcr.io/unshakled-inc/tor-relay@$ghcr_debug_digest"
       - name: verify signatures
         run: |
           for ref in \
