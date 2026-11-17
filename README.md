@@ -628,6 +628,10 @@ cd tor-relay
 docker buildx build \
   --target runtime \
   --build-arg TOR_VERSION=$(cat VERSION) \
+  --build-arg TORINIT_VERSION=$(cat VERSION) \
+  --build-arg REVISION=$(git rev-parse HEAD) \
+  --build-arg LYREBIRD_VERSION=$(cat LYREBIRD_VERSION) \
+  --build-arg WEBTUNNEL_VERSION=$(cat WEBTUNNEL_VERSION) \
   -t tor-relay:dev \
   --load .
 ```
