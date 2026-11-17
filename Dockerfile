@@ -99,7 +99,11 @@ RUN set -eu; \
 
 WORKDIR /src/lyrebird
 
-RUN CGO_ENABLED=0 go build -trimpath \
+# lyrebird 0.10.0 pins golang.org/x/net v0.59.0, which has two HIGH
+# advisories fixed in v0.62.0. Bump it at build time until upstream
+# releases a new tag.
+RUN go get golang.org/x/net@v0.62.0 && \
+    CGO_ENABLED=0 go build -trimpath \
       -ldflags "-s -w -X main.lyrebirdVersion=${LYREBIRD_VERSION}" \
       -o /pt/lyrebird ./cmd/lyrebird
 

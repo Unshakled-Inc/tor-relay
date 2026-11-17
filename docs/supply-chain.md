@@ -44,6 +44,14 @@ The transport builds run with `GOFLAGS=-mod=readonly` and
 `GOTOOLCHAIN=local`, so a missing `go.sum` entry or a toolchain download
 fails the build instead of silently changing the build inputs.
 
+### Dependency override
+
+lyrebird 0.10.0 pins `golang.org/x/net` v0.59.0. Two HIGH advisories,
+CVE-2026-78661 and CVE-2026-78669, are fixed in v0.62.0. The build runs
+`go get golang.org/x/net@v0.62.0` in the cloned lyrebird source before
+compiling. Remove the override when an upstream lyrebird tag pins v0.62.0 or
+newer.
+
 ## Go modules
 
 The transports build from their upstream `go.sum` and the Go checksum
