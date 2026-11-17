@@ -363,6 +363,10 @@ jobs:
           ghcr_runtime_sources=()
           hub_debug_sources=()
           ghcr_debug_sources=()
+          hub_runtime_tags=()
+          ghcr_runtime_tags=()
+          hub_debug_tags=()
+          ghcr_debug_tags=()
           for file in digests/*.txt; do
             digest="$(cat "$file")"
             case "$file" in
@@ -380,13 +384,17 @@ jobs:
             if [ -z "$tag" ]; then
               continue
             fi
-            docker buildx imagetools create -t "docker.io/unshakled/tor-relay:$tag" "${hub_runtime_sources[@]}"
-            docker buildx imagetools create -t "ghcr.io/unshakled-inc/tor-relay:$tag" "${ghcr_runtime_sources[@]}"
-            docker buildx imagetools create -t "docker.io/unshakled/tor-relay:$tag-debug" "${hub_debug_sources[@]}"
-            docker buildx imagetools create -t "ghcr.io/unshakled-inc/tor-relay:$tag-debug" "${ghcr_debug_sources[@]}"
+            hub_runtime_tags+=("-t" "docker.io/unshakled/tor-relay:$tag")
+            ghcr_runtime_tags+=("-t" "ghcr.io/unshakled-inc/tor-relay:$tag")
+            hub_debug_tags+=("-t" "docker.io/unshakled/tor-relay:$tag-debug")
+            ghcr_debug_tags+=("-t" "ghcr.io/unshakled-inc/tor-relay:$tag-debug")
           done <<EOF
           $TAGS
           EOF
+          docker buildx imagetools create "${hub_runtime_tags[@]}" "${hub_runtime_sources[@]}"
+          docker buildx imagetools create "${ghcr_runtime_tags[@]}" "${ghcr_runtime_sources[@]}"
+          docker buildx imagetools create "${hub_debug_tags[@]}" "${hub_debug_sources[@]}"
+          docker buildx imagetools create "${ghcr_debug_tags[@]}" "${ghcr_debug_sources[@]}"
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - name: sign manifests
         run: |
@@ -398,6 +406,17 @@ jobs:
           cosign sign --yes "ghcr.io/unshakled-inc/tor-relay@$ghcr_digest"
           cosign sign --yes "docker.io/unshakled/tor-relay@$hub_debug_digest"
           cosign sign --yes "ghcr.io/unshakled-inc/tor-relay@$ghcr_debug_digest"
+      - name: verify signatures
+        run: |
+          for ref in \
+            docker.io/unshakled/tor-relay:latest \
+            docker.io/unshakled/tor-relay:latest-debug \
+            ghcr.io/unshakled-inc/tor-relay:latest \
+            ghcr.io/unshakled-inc/tor-relay:latest-debug; do
+            cosign verify "$ref" \
+              --certificate-identity-regexp 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/.*' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          done
 
   readme:
     needs: prepare
