@@ -274,6 +274,8 @@ CI publishes these tags:
 
 The debug variant publishes the same tags with a `-debug` suffix, for example `0.4.9.17-debug`, `0.4.9-debug`, `latest-debug`, and `0.4.9.17-20261116-debug`.
 
+See [CHANGELOG.md](https://github.com/Unshakled-Inc/tor-relay/blob/main/CHANGELOG.md) for the release history.
+
 Update cadence:
 
 - The release watcher checks `dist.torproject.org` every six hours and starts a build when a new stable tor release is published.
