@@ -154,6 +154,8 @@ docker run -d \
   --security-opt no-new-privileges \
   --restart unless-stopped \
   --stop-timeout 45 \
+  --log-opt max-size=10m \
+  --log-opt max-file=3 \
   -v /srv/tor-relay/data:/var/lib/tor \
   --env-file .env \
   docker.io/unshakled/tor-relay:latest

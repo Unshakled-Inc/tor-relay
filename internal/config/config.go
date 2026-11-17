@@ -24,33 +24,34 @@ var familyIDRE = regexp.MustCompile(`^[A-Za-z0-9+/]+={0,2}$`)
 var fingerprintRE = regexp.MustCompile(`^[0-9A-Fa-f]{40}$`)
 
 var allowed = map[string]bool{
-	"TOR_ROLE":                  true,
-	"TOR_NICKNAME":              true,
-	"TOR_CONTACT":               true,
-	"TOR_ORPORT":                true,
-	"TOR_ADDRESS":               true,
-	"TOR_BANDWIDTH_RATE":        true,
-	"TOR_BANDWIDTH_BURST":       true,
-	"TOR_SANDBOX":               true,
-	"TOR_LOG_LEVEL":             true,
-	"TOR_FAMILY_ID":             true,
-	"TOR_FAMILY_KEY_DIR":        true,
-	"TOR_MYFAMILY":              true,
-	"TOR_MYFAMILY_URL":          true,
-	"TOR_MYFAMILY_REFRESH":      true,
-	"TOR_MYFAMILY_MAX_DROP_PCT": true,
-	"TOR_EXIT_POLICY":           true,
-	"TOR_EXIT_IPV6":             true,
-	"TOR_OBFS4_PORT":            true,
-	"TOR_BRIDGE_DISTRIBUTION":   true,
-	"TOR_WEBTUNNEL_URL":         true,
-	"TOR_WEBTUNNEL_LISTEN":      true,
-	"TOR_DNS_RESOLV_CONF":       true,
-	"TOR_EXTRA_ARGS":            true,
-	"TOR_CONTROL_PORT":          true,
-	"TOR_METRICS_PORT":          true,
-	"TOR_METRICS_POLICY":        true,
-	"TOR_METRICS_PUBLIC":        true,
+	"TOR_ROLE":                    true,
+	"TOR_NICKNAME":                true,
+	"TOR_CONTACT":                 true,
+	"TOR_ORPORT":                  true,
+	"TOR_ADDRESS":                 true,
+	"TOR_BANDWIDTH_RATE":          true,
+	"TOR_BANDWIDTH_BURST":         true,
+	"TOR_SANDBOX":                 true,
+	"TOR_LOG_LEVEL":               true,
+	"TOR_FAMILY_ID":               true,
+	"TOR_FAMILY_KEY_DIR":          true,
+	"TOR_MYFAMILY":                true,
+	"TOR_MYFAMILY_URL":            true,
+	"TOR_MYFAMILY_REFRESH":        true,
+	"TOR_MYFAMILY_MAX_DROP_PCT":   true,
+	"TOR_EXIT_POLICY":             true,
+	"TOR_EXIT_IPV6":               true,
+	"TOR_OBFS4_PORT":              true,
+	"TOR_BRIDGE_DISTRIBUTION":     true,
+	"TOR_WEBTUNNEL_URL":           true,
+	"TOR_WEBTUNNEL_LISTEN":        true,
+	"TOR_DNS_RESOLV_CONF":         true,
+	"TOR_EXTRA_ARGS":              true,
+	"TOR_ALLOW_UNSAFE_EXTRA_ARGS": true,
+	"TOR_CONTROL_PORT":            true,
+	"TOR_METRICS_PORT":            true,
+	"TOR_METRICS_POLICY":          true,
+	"TOR_METRICS_PUBLIC":          true,
 }
 
 var logLevels = map[string]bool{
@@ -67,6 +68,28 @@ var bridgeDistributions = map[string]bool{
 	"https":    true,
 	"email":    true,
 	"settings": true,
+}
+
+// managedExtraArgs maps a torrc directive to the reason it is managed by the
+// image. Operators can still set these through TOR_EXTRA_ARGS when they set
+// TOR_ALLOW_UNSAFE_EXTRA_ARGS=1.
+var managedExtraArgs = map[string]string{
+	"controlport":           "use TOR_CONTROL_PORT in the debug image",
+	"controlsocket":         "the image uses a control port, not a socket",
+	"hashedcontrolpassword": "cookie authentication is managed by TOR_CONTROL_PORT",
+	"socksport":             "the image sets SocksPort 0",
+	"transport":             "client transports are not configured by the image",
+	"natdport":              "the image does not configure a NATD port",
+	"dnsport":               "the image does not run a DNSPort",
+	"httptunnelport":        "the image does not run an HTTP tunnel",
+	"datadirectory":         "the data directory is /var/lib/tor",
+	"runasdaemon":           "tor runs in the foreground",
+	"user":                  "the container runs as UID 65532",
+	"sandbox":               "use TOR_SANDBOX",
+	"safelogging":           "the privacy default is managed by the image",
+	"metricsport":           "use TOR_METRICS_PORT",
+	"metricsportpolicy":     "use TOR_METRICS_POLICY",
+	"%include":              "the image already includes /etc/tor/torrc.d",
 }
 
 // Config is the validated torinit configuration for v0.
@@ -94,6 +117,7 @@ type Config struct {
 	WebTunnelListen    string
 	DNSResolvConf      string
 	ExtraArgs          []string
+	AllowUnsafeExtra   bool
 	ControlPort        int
 	MetricsPort        string
 	MetricsPolicy      string
@@ -132,7 +156,8 @@ var envVars = []EnvVar{
 	{Name: "TOR_WEBTUNNEL_URL", Required: "webtunnel only", Default: "", Rule: "https URL with a host; the path may be `/` for a dedicated domain"},
 	{Name: "TOR_WEBTUNNEL_LISTEN", Required: "no", Default: "`127.0.0.1:15000`", Rule: "host:port for the webtunnel listener"},
 	{Name: "TOR_DNS_RESOLV_CONF", Required: "no", Default: "", Rule: "Path rendered as `ServerDNSResolvConfFile`, mainly for exit relays"},
-	{Name: "TOR_EXTRA_ARGS", Required: "no", Default: "", Rule: "Semicolon-separated torrc lines, rendered verbatim at the end"},
+	{Name: "TOR_EXTRA_ARGS", Required: "no", Default: "", Rule: "Semicolon-separated torrc lines, rendered verbatim at the end; managed directives are rejected"},
+	{Name: "TOR_ALLOW_UNSAFE_EXTRA_ARGS", Required: "no", Default: "`0`", Rule: "`0` or `1`; allow managed directives in `TOR_EXTRA_ARGS`"},
 	{Name: "TOR_CONTROL_PORT", Required: "debug only", Default: "", Rule: "1 to 65535; renders `ControlPort 127.0.0.1:<port>` and `CookieAuthentication 1`"},
 	{Name: "TOR_METRICS_PORT", Required: "no", Default: "", Rule: "host:port for the Prometheus endpoint, requires `TOR_METRICS_POLICY`"},
 	{Name: "TOR_METRICS_POLICY", Required: "no", Default: "", Rule: "Policy for `MetricsPort`, rendered with a `reject *` fallback"},
@@ -149,6 +174,37 @@ func EnvDoc() string {
 		fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n", v.Name, v.Required, v.Default, v.Rule)
 	}
 	return b.String()
+}
+
+// TorrcDWarnings returns one warning per managed directive found in the
+// *.conf files under dir. The files are still included; this only tells the
+// operator that the image also sets the same option.
+func TorrcDWarnings(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var warnings []string
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".conf") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		for i, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) == 0 || strings.HasPrefix(fields[0], "#") {
+				continue
+			}
+			directive := strings.ToLower(fields[0])
+			if reason, ok := managedExtraArgs[directive]; ok {
+				warnings = append(warnings, fmt.Sprintf("%s:%d: %s is managed by the image: %s", entry.Name(), i+1, directive, reason))
+			}
+		}
+	}
+	return warnings
 }
 
 // Load parses and validates a list of KEY=VALUE environment entries.
@@ -424,6 +480,18 @@ func Load(environ []string) (*Config, error) {
 		dnsResolvConf = value
 	}
 
+	allowUnsafe := false
+	if value := values["TOR_ALLOW_UNSAFE_EXTRA_ARGS"]; value != "" {
+		switch value {
+		case "0":
+			allowUnsafe = false
+		case "1":
+			allowUnsafe = true
+		default:
+			return nil, fmt.Errorf("TOR_ALLOW_UNSAFE_EXTRA_ARGS %q must be 0 or 1", value)
+		}
+	}
+
 	extraArgs := []string{}
 	if value := values["TOR_EXTRA_ARGS"]; value != "" {
 		if strings.ContainsAny(value, "\r\n") {
@@ -433,6 +501,11 @@ func Load(environ []string) (*Config, error) {
 			arg = strings.TrimSpace(arg)
 			if arg == "" {
 				return nil, fmt.Errorf("TOR_EXTRA_ARGS contains an empty entry")
+			}
+			first := strings.Fields(arg)[0]
+			directive := strings.ToLower(first)
+			if reason, ok := managedExtraArgs[directive]; ok && !allowUnsafe {
+				return nil, fmt.Errorf("TOR_EXTRA_ARGS %s is managed by the image: %s (set TOR_ALLOW_UNSAFE_EXTRA_ARGS=1 to override)", first, reason)
 			}
 			extraArgs = append(extraArgs, arg)
 		}
@@ -530,6 +603,7 @@ func Load(environ []string) (*Config, error) {
 		WebTunnelListen:    webTunnelListen,
 		DNSResolvConf:      dnsResolvConf,
 		ExtraArgs:          extraArgs,
+		AllowUnsafeExtra:   allowUnsafe,
 		ControlPort:        controlPort,
 		MetricsPort:        metricsPort,
 		MetricsPolicy:      metricsPolicy,

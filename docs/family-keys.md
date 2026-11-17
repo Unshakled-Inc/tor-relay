@@ -66,6 +66,16 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
     stop_grace_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    pids_limit: 512
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     volumes:
       - tor-data:/var/lib/tor
     secrets:
@@ -106,6 +116,8 @@ docker run -d \
   --name tor-relay \
   --network host \
   --stop-timeout 45 \
+  --log-opt max-size=10m \
+  --log-opt max-file=3 \
   -v /srv/tor-relay/family:/run/secrets:ro \
   --env-file .env \
   docker.io/unshakled/tor-relay:latest

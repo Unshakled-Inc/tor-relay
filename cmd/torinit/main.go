@@ -4,11 +4,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Unshakled-Inc/tor-relay/internal/bridge"
 	"github.com/Unshakled-Inc/tor-relay/internal/config"
@@ -69,6 +71,9 @@ func validateRole(cfg *config.Config) bool {
 	if err := config.ValidateExitPolicy(cfg, render.TorrcD); err != nil {
 		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
 		return false
+	}
+	for _, warning := range config.TorrcDWarnings(render.TorrcD) {
+		fmt.Fprintf(os.Stderr, "torinit: warning: %s\n", warning)
 	}
 	return true
 }
@@ -166,6 +171,9 @@ func runCmd() int {
 	if !ok {
 		return 1
 	}
+	if cfg.LogLevel == "debug" || cfg.LogLevel == "info" {
+		fmt.Fprintf(os.Stderr, "torinit: warning: TOR_LOG_LEVEL=%s is verbose and may record connection details; use notice for production\n", cfg.LogLevel)
+	}
 
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
@@ -180,6 +188,10 @@ func runCmd() int {
 		return 1
 	}
 	if err := os.Chmod(stateDir, 0700); err != nil {
+		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
+		return 1
+	}
+	if err := os.Remove(filepath.Join(stateDir, "pid")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
 		return 1
 	}
@@ -328,10 +340,41 @@ func healthcheckCmd() int {
 	if err != nil || pid <= 0 {
 		return 1
 	}
-	if _, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid))); err != nil {
+	exe, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "exe"))
+	if err != nil || exe != torBinary {
 		return 1
 	}
+
+	addr := "127.0.0.1:9001"
+	if value := os.Getenv("TOR_ORPORT"); value != "" {
+		addr = "127.0.0.1:" + value
+	}
+	if os.Getenv("TOR_ROLE") == "webtunnel" {
+		addr = os.Getenv("TOR_WEBTUNNEL_LISTEN")
+		if addr == "" {
+			addr = "127.0.0.1:15000"
+		}
+	}
+
+	conn, err := net.DialTimeout("tcp", dialable(addr), 3*time.Second)
+	if err != nil {
+		return 1
+	}
+	_ = conn.Close()
 	return 0
+}
+
+// dialable replaces a wildcard listen address with loopback so a healthcheck
+// can connect to a listener that is bound on all interfaces.
+func dialable(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
 }
 
 func exitCode(err error) int {

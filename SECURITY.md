@@ -2,9 +2,10 @@
 
 ## Supported versions
 
-Security fixes are published for the newest tor version tag and for
-`latest`. Older version tags are not patched. If you pin an exact version,
-update the tag when a new release is published.
+Security fixes are published for `latest`, the current series tag, the
+current version tag, and the current dated tag. The weekly rebuild refreshes
+the current version with base image fixes. Older dated tags are not patched.
+If you pin a digest, update it when a new release is published.
 
 The image version follows the tor release it contains. There is no separate
 image version yet.
@@ -78,7 +79,11 @@ published as soon as the fix is tested.
   checksum. A failed signature or checksum stops the build.
 - Base images are pinned by digest. GitHub Actions are pinned by commit SHA.
 - Both the runtime and the debug image are scanned with Trivy. The build
-  fails on a critical vulnerability with an available fix.
+  fails on a critical or high vulnerability with an available fix. Copied
+  shared libraries carry their Debian package metadata, and a daily scan of
+  the published `latest` triggers a rebuild when a fix appears.
+- Tor itself is covered by the release watcher. A new signed upstream release
+  starts a build within six hours.
 - SBOM and provenance attestations are generated for each image.
 - Manifest lists are signed with keyless cosign. Verify with the command in
   the README.

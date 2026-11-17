@@ -2,7 +2,29 @@
 
 Hardened, signed, multi-arch Docker image for Tor relay and bridge operators, published by Unshakled Inc. Tor is compiled from the signed upstream source tarball, never from distro packages.
 
-Status: Phase 2 is complete. Middle, exit, obfs4 bridge, WebTunnel, family keys, MyFamily, the debug variant, and metrics are available.
+Status: Phase 3 is complete. The middle, exit, obfs4 bridge, and WebTunnel roles, family keys, MyFamily, the debug variant, and metrics are available.
+
+## What it does and does not do
+
+| Does | Does not |
+| --- | --- |
+| Runs one Tor relay or bridge per container | Make you anonymous. It is a server for the network, not a client or proxy. `SocksPort` is off. |
+| Builds Tor from the Tor Project's signed source and checks the signature | Modify or patch Tor |
+| Generates the torrc from environment variables and rejects unknown ones | Manage your firewall, port forwarding, or DNS |
+| Keeps the relay identity in a volume across restarts and updates | Back up your keys. You must do that once. See [docs/backup.md](https://github.com/Unshakled-Inc/tor-relay/blob/main/docs/backup.md). |
+| Runs as non-root with a read-only filesystem, no capabilities, and Tor's sandbox | Secure the host. See [docs/host-checklist.md](https://github.com/Unshakled-Inc/tor-relay/blob/main/docs/host-checklist.md). |
+| Refuses to run as an exit unless you opt in twice | Handle abuse complaints or legal questions for exit operators |
+| Publishes signed images, rebuilt weekly and on every Tor release | Update itself. Use the update timer in [docs/auto-update.md](https://github.com/Unshakled-Inc/tor-relay/blob/main/docs/auto-update.md). |
+| Sends no telemetry. The only outbound traffic is Tor itself and, if you set `TOR_MYFAMILY_URL`, a periodic fetch of that URL. | Hide that you run a relay. Your IP, nickname, contact info, and bandwidth are public in the Tor consensus by design. |
+
+## Which role?
+
+| Role | Use it when |
+| --- | --- |
+| `middle` | You want the safest start. It carries traffic inside the network and needs no exit policy. |
+| `bridge` | You want to help censored users. The IP stays out of the public relay list. |
+| `webtunnel` | You want a bridge that looks like ordinary HTTPS and you control a domain and certificate. |
+| `exit` | You want the most useful role. It has real legal and abuse exposure. Read the exit guide first. |
 
 ## What this image is
 
@@ -27,9 +49,14 @@ Requirements:
 - Docker Engine with Buildx support.
 - A host with a public IPv4 or IPv6 address.
 - ORPort reachable from the internet. Host networking is recommended.
+- A firewall rule that allows the ORPort (and the obfs4 port for bridges). On Ubuntu, `sudo ufw allow 9001/tcp`. If your provider has a cloud firewall, open the port there too.
 - If you just added your user to the `docker` group, log out and back in, or run `newgrp docker`. Otherwise `docker pull` fails with a socket permission error.
 
 Replace the nickname and contact with your own values. Nicknames are not unique on the Tor network, but a distinct name makes the relay easier to find.
+
+`TOR_CONTACT` is published in the consensus and scraped by directory services. Use a role address, not a personal one. The ContactInfo format is `email:... url:...`, for example `email:support[]example.org url:example.org`.
+
+On a metered host, set `TOR_BANDWIDTH_RATE` and `AccountingMax` so the relay does not exceed your transfer allowance.
 
 1. Create a working directory and an env file:
 
@@ -61,12 +88,14 @@ docker run -d \
   --security-opt no-new-privileges \
   --restart unless-stopped \
   --stop-timeout 45 \
+  --log-opt max-size=10m \
+  --log-opt max-file=3 \
   -v tor-data:/var/lib/tor \
   --env-file .env \
   docker.io/unshakled/tor-relay:latest
 ```
 
-`--stop-timeout 45` gives tor time to shut down cleanly. Tor's default `ShutdownWaitLength` is 30 seconds, and Docker's default stop timeout is 10 seconds, so without it Docker kills tor before it finishes. With Compose, set `stop_grace_period: 45s`.
+`--stop-timeout 45` gives tor time to drain. The image sets `STOPSIGNAL SIGINT`, so `docker stop` tells tor to stop accepting new circuits and exit after its 30 second `ShutdownWaitLength`. Docker's default stop timeout is 10 seconds, so without `--stop-timeout` Docker kills tor before the drain finishes. With Compose, set `stop_grace_period: 45s`.
 
 4. Follow the log:
 
@@ -76,7 +105,21 @@ docker logs -f tor-relay
 
 5. Confirm the relay is bootstrapping and note the fingerprint:
 
-Look for `Bootstrapped 100%` and `Your Tor server's identity key fingerprint`. The fingerprint is also written to `/var/lib/tor/fingerprint`.
+Look for `Bootstrapped 100%`, `Self-testing indicates your ORPort is reachable`, and `Your Tor server's identity key fingerprint`. The fingerprint is also written to `/var/lib/tor/fingerprint`.
+
+Print both fingerprints from the running container:
+
+```
+docker exec tor-relay /usr/local/bin/torinit fingerprint
+```
+
+Search for the RSA fingerprint on Relay Search:
+
+```
+https://metrics.torproject.org/rs.html#search/<RSA-FINGERPRINT>
+```
+
+The relay can take a few hours to appear. Expect little traffic for the first two weeks while it ramps up.
 
 ### Docker Compose
 
@@ -94,6 +137,16 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
     stop_grace_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    pids_limit: 512
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     volumes:
       - tor-data:/var/lib/tor
 
@@ -108,6 +161,8 @@ docker compose up -d
 ```
 
 The repository also has `examples/middle/compose.yml`, which uses `tor-relay:dev` for local builds. It shows the commented-out bridge networking alternative and the trade-off.
+
+Prefer Compose for a real relay. A named volume in a compose file cannot be forgotten, while a `docker run` without `-v` puts the keys in an anonymous volume that is lost on `docker rm -v` or `docker system prune --volumes`.
 
 ## Roles
 
@@ -150,7 +205,8 @@ The current release supports these variables:
 | `TOR_WEBTUNNEL_URL` | webtunnel only |  | https URL with a host; the path may be `/` for a dedicated domain |
 | `TOR_WEBTUNNEL_LISTEN` | no | `127.0.0.1:15000` | host:port for the webtunnel listener |
 | `TOR_DNS_RESOLV_CONF` | no |  | Path rendered as `ServerDNSResolvConfFile`, mainly for exit relays |
-| `TOR_EXTRA_ARGS` | no |  | Semicolon-separated torrc lines, rendered verbatim at the end |
+| `TOR_EXTRA_ARGS` | no |  | Semicolon-separated torrc lines, rendered verbatim at the end; managed directives are rejected |
+| `TOR_ALLOW_UNSAFE_EXTRA_ARGS` | no | `0` | `0` or `1`; allow managed directives in `TOR_EXTRA_ARGS` |
 | `TOR_CONTROL_PORT` | debug only |  | 1 to 65535; renders `ControlPort 127.0.0.1:<port>` and `CookieAuthentication 1` |
 | `TOR_METRICS_PORT` | no |  | host:port for the Prometheus endpoint, requires `TOR_METRICS_POLICY` |
 | `TOR_METRICS_POLICY` | no |  | Policy for `MetricsPort`, rendered with a `reject *` fallback |
@@ -170,7 +226,7 @@ Any other variable starting with `TOR_` is rejected with an error naming it. Thi
 TOR_EXTRA_ARGS=MaxMemInQueues 128 MB;DirPort 80
 ```
 
-It is rendered after the role-specific settings and after `Sandbox`, and before the `/etc/tor/torrc.d/` include. Any single-line directive from the pinned tor man page is allowed. `torinit` does not parse the directive; tor validates it at startup and in `torinit verify`.
+It is rendered after the role-specific settings and after `Sandbox`, and before the `/etc/tor/torrc.d/` include. Single-line directives from the pinned tor man page are allowed, except the directives the image manages. `torinit` checks the first word against that managed list and rejects a conflict with a message naming the dedicated variable. Set `TOR_ALLOW_UNSAFE_EXTRA_ARGS=1` to override the check. tor validates the final configuration at startup and in `torinit verify`.
 
 `TOR_DNS_RESOLV_CONF` renders `ServerDNSResolvConfFile <path>`, mainly for exit relays and Cloudflare DNS resolver files.
 
@@ -272,14 +328,18 @@ The debug variant uses the pinned Debian trixie-slim base with nyx and a shell. 
 
 CI publishes these tags:
 
-- `<version>`, for example `0.4.9.17`
-- `<series>`, for example `0.4.9`
-- `latest`
-- `<version>-<YYYYMMDD>`, for example `0.4.9.17-20261116`
+| Tag | Moves? | Use it for |
+| --- | --- | --- |
+| `latest` | Yes, on every publish | Trying the image |
+| `0.4.9` | Yes, within the Tor series | Single relays on auto-update. Recommended default. |
+| `0.4.9.17` | Yes, rebuilt weekly with base fixes | Pinning a Tor version while still getting OS fixes |
+| `0.4.9.17-20261117` | No | Rollback target and audit reference |
+| `@sha256:...` | No | Fleets managed by configuration management |
+| `latest-debug` | Yes | Troubleshooting only |
 
 The debug variant publishes one moving tag, `latest-debug`. It is a troubleshooting tool, not a pinned release artifact. Use the versioned runtime tags when you need a reproducible release.
 
-See [CHANGELOG.md](https://github.com/Unshakled-Inc/tor-relay/blob/main/CHANGELOG.md) for the release history.
+See [CHANGELOG.md](https://github.com/Unshakled-Inc/tor-relay/blob/main/CHANGELOG.md) for the release history. Every publish also creates a GitHub Release named `<version>-<YYYYMMDD>` with the digests and the exact verification command.
 
 Update cadence:
 
@@ -300,7 +360,7 @@ Images are signed by CI with keyless cosign. Verify the Docker Hub image with:
 
 ```
 cosign verify docker.io/unshakled/tor-relay:latest \
-  --certificate-identity-regexp 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/.*' \
+  --certificate-identity 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/build.yml@refs/heads/main' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
@@ -308,7 +368,7 @@ For GHCR:
 
 ```
 cosign verify ghcr.io/unshakled-inc/tor-relay:latest \
-  --certificate-identity-regexp 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/.*' \
+  --certificate-identity 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/build.yml@refs/heads/main' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
@@ -383,7 +443,7 @@ See [docs/migrate-from-systemd.md](https://github.com/Unshakled-Inc/tor-relay/bl
 
 ## Auto-updating
 
-The recommended default is a systemd timer that runs `docker compose pull` and `docker compose up -d`. A label-scoped updater container also works, but it needs access to the Docker socket. Podman auto-update is supported.
+The recommended default is a systemd timer that runs `examples/update/tor-relay-update.sh`. It pulls the image, verifies the cosign signature, and recreates the relay with the verified digest. A label-scoped updater container also works, but it needs access to the Docker socket and does not verify signatures. Podman auto-update is supported.
 
 See [docs/auto-update.md](https://github.com/Unshakled-Inc/tor-relay/blob/main/docs/auto-update.md) for the complete unit and timer files.
 
@@ -606,17 +666,27 @@ The tor man page warns that exposing metrics publicly is dangerous for Tor users
 `/var/lib/tor` holds the relay keys, the fingerprint, tor state, and the generated configuration under `.torinit/`.
 
 - Use a named volume or a bind mount for `/var/lib/tor`.
-- Back up the volume before moving or recreating the relay.
+- Back up the volume before moving or recreating the relay. See [docs/backup.md](https://github.com/Unshakled-Inc/tor-relay/blob/main/docs/backup.md) for one encrypted backup and restore command.
 - The directory must be writable by UID/GID 65532.
 - Never run two containers with the same keys at the same time.
 
 The image declares `/var/lib/tor` as a volume. The runtime creates it with mode 0700 and ownership 65532:65532.
 
+## Logs
+
+Tor logs to stdout. Docker's default `json-file` driver has no size limit, so set one:
+
+```
+--log-opt max-size=10m --log-opt max-file=3
+```
+
+The Compose examples set the same limits. At `TOR_LOG_LEVEL=debug` or `info`, torinit prints a warning: those levels are useful for troubleshooting, but they record more connection detail than `notice`.
+
 ## Healthcheck
 
-The image defines a Docker healthcheck that runs `torinit healthcheck`. It reads `/var/lib/tor/.torinit/pid` and checks whether `/proc/<pid>` exists.
+The image defines a Docker healthcheck that runs `torinit healthcheck`. It reads `/var/lib/tor/.torinit/pid`, confirms that `/proc/<pid>/exe` is `/usr/bin/tor`, and opens a TCP connection to the relay's listener on loopback: the ORPort for middle, exit, and obfs4 bridges, or `TOR_WEBTUNNEL_LISTEN` for WebTunnel bridges.
 
-This confirms that the tor process is alive. It does not confirm that the relay has bootstrapped or that the ORPort is reachable. Check the logs for `Bootstrapped 100%` and the relay's self-test results.
+This confirms that the tor process is alive and listening. It does not confirm that the relay has bootstrapped or that the ORPort is reachable from the internet. Check the logs for `Bootstrapped 100%` and the relay's self-test results.
 
 ## Building from source
 
@@ -631,7 +701,9 @@ docker buildx build \
   --build-arg TORINIT_VERSION=$(cat VERSION) \
   --build-arg REVISION=$(git rev-parse HEAD) \
   --build-arg LYREBIRD_VERSION=$(cat LYREBIRD_VERSION) \
+  --build-arg LYREBIRD_COMMIT=$(cat LYREBIRD_COMMIT) \
   --build-arg WEBTUNNEL_VERSION=$(cat WEBTUNNEL_VERSION) \
+  --build-arg WEBTUNNEL_COMMIT=$(cat WEBTUNNEL_COMMIT) \
   -t tor-relay:dev \
   --load .
 ```

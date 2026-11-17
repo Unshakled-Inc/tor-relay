@@ -269,6 +269,70 @@ func TestLoadExtraOptions(t *testing.T) {
 	}
 }
 
+func TestLoadExtraOptionsManaged(t *testing.T) {
+	base := []string{
+		"TOR_ROLE=middle",
+		"TOR_NICKNAME=TestRelay",
+		"TOR_CONTACT=test@example.com",
+	}
+
+	if _, err := Load(append(base, "TOR_EXTRA_ARGS=ControlPort 127.0.0.1:9051")); err == nil {
+		t.Fatal("want error for managed ControlPort")
+	} else if !strings.Contains(err.Error(), "TOR_CONTROL_PORT") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := Load(append(base, "TOR_EXTRA_ARGS=SocksPort 9050;DirPort 80")); err == nil {
+		t.Fatal("want error for managed SocksPort")
+	} else if !strings.Contains(err.Error(), "SocksPort 0") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := Load(append(base, "TOR_EXTRA_ARGS=%include /etc/tor/torrc.d")); err == nil {
+		t.Fatal("want error for managed %include")
+	}
+
+	cfg, err := Load(append(base,
+		"TOR_EXTRA_ARGS=ControlPort 127.0.0.1:9051;Sandbox 0",
+		"TOR_ALLOW_UNSAFE_EXTRA_ARGS=1",
+	))
+	if err != nil {
+		t.Fatalf("Load with override: %v", err)
+	}
+	if !cfg.AllowUnsafeExtra {
+		t.Error("AllowUnsafeExtra = false, want true")
+	}
+	if len(cfg.ExtraArgs) != 2 {
+		t.Fatalf("ExtraArgs = %v, want 2 entries", cfg.ExtraArgs)
+	}
+
+	if _, err := Load(append(base, "TOR_ALLOW_UNSAFE_EXTRA_ARGS=yes")); err == nil {
+		t.Fatal("want error for invalid TOR_ALLOW_UNSAFE_EXTRA_ARGS")
+	}
+}
+
+func TestTorrcDWarnings(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "extra.conf"), []byte("DirPort 80\nSocksPort 9050\n# Sandbox 1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "other.txt"), []byte("Sandbox 1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	warnings := TorrcDWarnings(dir)
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want one", warnings)
+	}
+	if !strings.Contains(warnings[0], "extra.conf:2: socksport") {
+		t.Errorf("warning = %q", warnings[0])
+	}
+
+	if got := TorrcDWarnings(filepath.Join(dir, "missing")); len(got) != 0 {
+		t.Errorf("missing dir warnings = %v", got)
+	}
+}
+
 func TestLoadWebTunnel(t *testing.T) {
 	cfg, err := Load([]string{
 		"TOR_ROLE=webtunnel",

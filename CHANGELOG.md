@@ -34,25 +34,37 @@ versioned with the image until its first standalone release.
 - Prometheus metrics through `TOR_METRICS_PORT`, `TOR_METRICS_POLICY`, and
   `TOR_METRICS_PUBLIC`, with a `reject *` fallback.
 - `TOR_EXTRA_ARGS` for arbitrary torrc lines and `TOR_DNS_RESOLV_CONF` for a
-  resolver configuration file.
+  resolver configuration file. Managed directives are rejected unless
+  `TOR_ALLOW_UNSAFE_EXTRA_ARGS=1` is set.
 - Structured `.env.example` files for middle, exit, bridge, and WebTunnel
   roles.
 - Operator documentation: README, extra torrc arguments, systemd migration,
-  family keys, auto-update, and this security policy.
+  family keys, auto-update, backup, host checklist, supply chain, and this
+  security policy.
+- A verify-then-update script that pulls, verifies the cosign signature, and
+  recreates the relay with the verified digest.
 
 ### Security
 
 - Tor source signature verification with `gpgv` and a tarball checksum check
   before compilation.
+- lyrebird and webtunnel pinned by tag and commit, with the build failing if
+  the tag resolves to a different commit.
 - Distroless runtime with no shell and no package manager.
 - Runs as UID/GID 65532, with a 0700 data directory.
 - Compatible with a read-only root filesystem, dropped capabilities, and
   `no-new-privileges`.
 - Seccomp sandbox enabled by default for middle and exit relays.
-- Trivy scan gate on critical vulnerabilities with available fixes, for both
-  the runtime and debug images.
+- Trivy scan gate on critical and high vulnerabilities with available fixes,
+  for both the runtime and debug images. Copied libraries carry Debian
+  package metadata, and a daily scan of the published image triggers a
+  rebuild when a fix appears.
 - SBOM and provenance attestations for every image.
-- Keyless cosign signatures on both registries.
+- Keyless cosign signatures on both registries, verified after signing with
+  the exact workflow identity. Publishing is restricted to `main`.
+- `STOPSIGNAL SIGINT` so `docker stop` drains circuits before exit, and a
+  healthcheck that confirms the process is tor and that the listener
+  accepts connections.
 
 ### Known limitations
 

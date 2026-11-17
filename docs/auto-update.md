@@ -14,17 +14,29 @@ Every method below recreates the container, so the relay restarts. A relay
 restart is normal and does not change the fingerprint, but choose a quiet
 time and avoid updating several relays at once.
 
-## Recommended: systemd timer with Compose
+## Recommended: systemd timer with a verify-then-update script
 
 This method needs no extra container and no access to the Docker socket. It
-runs `docker compose pull` and `docker compose up -d` on a timer.
+pulls the image, verifies its cosign signature, and recreates the relay with
+the verified digest. A failed verification exits non-zero and leaves the
+running relay untouched.
 
-Create a Compose file at `/srv/tor-relay/compose.yml`:
+Install cosign 3.1.4 and check the release checksum:
+
+```
+curl -fsSLO https://github.com/sigstore/cosign/releases/download/v3.1.4/cosign-linux-amd64
+curl -fsSLO https://github.com/sigstore/cosign/releases/download/v3.1.4/cosign_checksums.txt
+sha256sum --ignore-missing -c cosign_checksums.txt
+sudo install -m 0755 cosign-linux-amd64 /usr/local/bin/cosign
+```
+
+Create a Compose file at `/srv/tor-relay/compose.yml`. The image is a
+variable so the update script can pass the verified digest:
 
 ```
 services:
   tor-relay:
-    image: docker.io/unshakled/tor-relay:latest
+    image: ${TOR_RELAY_IMAGE:?run tor-relay-update.sh}
     network_mode: host
     env_file:
       - .env
@@ -35,12 +47,32 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
     stop_grace_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    pids_limit: 512
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     volumes:
       - tor-data:/var/lib/tor
 
 volumes:
   tor-data:
 ```
+
+Copy the update script from `examples/update/tor-relay-update.sh` and make it
+executable:
+
+```
+sudo install -m 0755 examples/update/tor-relay-update.sh /srv/tor-relay/tor-relay-update.sh
+```
+
+The script uses the moving series tag `0.4.9` by default. Set `TOR_RELAY_TAG`
+in the service unit if you want a different tag.
 
 Create the service unit at `/etc/systemd/system/tor-relay-update.service`:
 
@@ -54,8 +86,8 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/srv/tor-relay
-ExecStart=/usr/bin/docker compose pull
-ExecStart=/usr/bin/docker compose up -d
+Environment=TOR_RELAY_TAG=0.4.9
+ExecStart=/srv/tor-relay/tor-relay-update.sh
 ```
 
 Create the timer at `/etc/systemd/system/tor-relay-update.timer`:
@@ -99,15 +131,15 @@ hitting registry rate limits when several relays share a host or network.
 `Persistent=true` runs the update after a missed schedule, for example after
 a reboot.
 
-If the relay is not managed by Compose, replace the two `ExecStart` lines
-with the equivalent `docker pull` and `docker run` commands, or move the
-deployment to Compose.
+If the relay is not managed by Compose, use the same pull, verify, and run
+steps in a small wrapper script, or move the deployment to Compose.
 
 ## Watchtower
 
 Watchtower watches containers and recreates them when a new image appears.
 It needs access to the Docker socket, which is effectively root access on
-the host. Use it only if that trade-off is acceptable.
+the host, and it does not verify the cosign signature. Use it only if that
+trade-off is acceptable; the timer above is safer.
 
 Start Watchtower with label filtering so it only touches containers that opt
 in:
@@ -227,7 +259,7 @@ Verify the image signature before trusting a new pull:
 
 ```
 cosign verify docker.io/unshakled/tor-relay:latest \
-  --certificate-identity-regexp 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/.*' \
+  --certificate-identity 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/build.yml@refs/heads/main' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 

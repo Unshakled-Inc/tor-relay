@@ -26,11 +26,11 @@ Rules:
 - Leading and trailing whitespace around each entry is removed.
 - Empty entries are rejected. Do not use `;;`.
 - Semicolons cannot appear inside a value. If a value needs a semicolon, use a `*.conf` file in `/etc/tor/torrc.d/` instead.
-- The entry is written verbatim. torinit does not parse the directive name or value.
+- The entry is written verbatim after torinit checks its first word against the managed list below. torinit does not parse the value.
 - No shell quoting is applied. Write values exactly as they would appear in a torrc file.
 - No environment variable expansion is applied. `$HOME` is literal.
 - A `#` starts a comment. Both full-line comments and trailing comments work, for example `MaxMemInQueues 128 MB # keep the queue small`.
-- A `%include` entry is allowed. The referenced file must exist and be readable by UID/GID 65532.
+- A `%include` entry is rejected by default because the image already includes `/etc/tor/torrc.d/`. Set `TOR_ALLOW_UNSAFE_EXTRA_ARGS=1` to allow it. The referenced file must exist and be readable by UID/GID 65532.
 
 ## What is allowed
 
@@ -50,8 +50,6 @@ Common categories that work through `TOR_EXTRA_ARGS`:
 | Directory service | `DirPort 80`, `DirPortFrontPage /etc/tor/exit-notice.html` |
 | Accounting | `AccountingMax 1 TB`, `AccountingStart month 1 00:00` |
 | Logging | `Log notice file /var/log/tor/notices.log` |
-| Control port | `ControlPort 127.0.0.1:9051`, `CookieAuthentication 1` |
-| Metrics | `MetricsPort 0.0.0.0:9035`, `MetricsPortPolicy accept 10.0.0.0/8` |
 | Exit policy details | `ExitPolicyRejectPrivate 0`, `ExitPolicyRejectLocalInterfaces 1` |
 | Testing | `TestingTorNetwork 1`, `DisableNetwork 1` |
 | Private addresses | `ExtendAllowPrivateAddresses 1` |
@@ -69,16 +67,22 @@ The categories overlap with dedicated variables in some cases. The table below s
 - Referencing a file that is not mounted or not readable by UID/GID 65532.
 - Overriding a directive that torinit must control, unless you have a reason. See the next section.
 
-## Directives torinit manages
+## Managed directives and the override
 
-The generated torrc already sets these. Use the dedicated variable where one exists.
+The generated torrc already sets these. `TOR_EXTRA_ARGS` rejects a managed directive unless you also set `TOR_ALLOW_UNSAFE_EXTRA_ARGS=1`. Use the dedicated variable where one exists.
+
+The rejected directives are `ControlPort`, `ControlSocket`, `HashedControlPassword`, `SocksPort`, `Transport`, `NATDPort`, `DNSPort`, `HTTPTunnelPort`, `DataDirectory`, `RunAsDaemon`, `User`, `Sandbox`, `SafeLogging`, `MetricsPort`, `MetricsPortPolicy`, and `%include`. The error names the dedicated variable or the reason the image owns the option.
+
+`TOR_ALLOW_UNSAFE_EXTRA_ARGS=1` is an explicit acknowledgment that you are overriding the image's defaults. For example, `TOR_EXTRA_ARGS=Sandbox 0` needs it.
+
+Files in `/etc/tor/torrc.d/` are not blocked. torinit logs one warning per managed directive it finds there, then includes the file.
 
 | Directive | Managed by | Notes |
 | --- | --- | --- |
-| `DataDirectory` | torinit | Fixed at `/var/lib/tor`. Do not override. |
-| `RunAsDaemon` | torinit | Fixed at `0`. Do not override. |
-| `SocksPort` | torinit | Set to `0`. Override only if you need a local SOCKS port. |
-| `Log` | `TOR_LOG_LEVEL` | Use `TOR_LOG_LEVEL` for the level. Extra `Log` lines are additive. |
+| `DataDirectory` | torinit | Fixed at `/var/lib/tor`. Rejected unless overridden. |
+| `RunAsDaemon` | torinit | Fixed at `0`. Rejected unless overridden. |
+| `SocksPort` | torinit | Set to `0`. Rejected unless overridden. |
+| `Log` | `TOR_LOG_LEVEL` | Use `TOR_LOG_LEVEL` for the level. Extra `Log` lines are additive and allowed. |
 | `Nickname` | `TOR_NICKNAME` | Use the dedicated variable. |
 | `ContactInfo` | `TOR_CONTACT` | Use the dedicated variable. |
 | `ORPort` | `TOR_ORPORT` | WebTunnel uses `ORPort 127.0.0.1:auto`. |
@@ -89,11 +93,11 @@ The generated torrc already sets these. Use the dedicated variable where one exi
 | `ExitRelay`, `ExitPolicy`, `IPv6Exit` | Role and `TOR_EXIT_POLICY`, `TOR_EXIT_IPV6` | `ExitPolicy` is additive. Extra policies combine with the generated ones. |
 | `BridgeRelay`, `ServerTransportPlugin`, `ServerTransportListenAddr`, `ServerTransportOptions`, `ExtORPort`, `BridgeDistribution` | Role and `TOR_OBFS4_PORT`, `TOR_BRIDGE_DISTRIBUTION`, `TOR_WEBTUNNEL_*` | Use the dedicated variables where they exist. |
 | `AssumeReachable` | WebTunnel role | Already set to `1` for WebTunnel. |
-| `Sandbox` | `TOR_SANDBOX` | Use the dedicated variable. |
-| `ControlPort`, `CookieAuthentication` | `TOR_CONTROL_PORT` in the debug variant | Use the dedicated variable in the debug image. |
+| `Sandbox` | `TOR_SANDBOX` | Use the dedicated variable. Rejected unless overridden. |
+| `ControlPort`, `CookieAuthentication` | `TOR_CONTROL_PORT` in the debug variant | Use `TOR_CONTROL_PORT` in the `latest-debug` image. |
 | `MetricsPort`, `MetricsPortPolicy` | `TOR_METRICS_PORT`, `TOR_METRICS_POLICY`, `TOR_METRICS_PUBLIC` | Use the dedicated variables. They add the `reject *` fallback and enforce the public acknowledgment. |
 
-If you set a scalar option in both a dedicated variable and `TOR_EXTRA_ARGS`, the extra arg wins because it is rendered later. For example, `TOR_SANDBOX=1` plus `TOR_EXTRA_ARGS=Sandbox 0` produces `Sandbox 0`.
+If you set a scalar option in both a dedicated variable and `TOR_EXTRA_ARGS`, the extra arg wins because it is rendered later. Managed scalars need `TOR_ALLOW_UNSAFE_EXTRA_ARGS=1` for this to work. For example, `TOR_SANDBOX=1` plus `TOR_ALLOW_UNSAFE_EXTRA_ARGS=1` and `TOR_EXTRA_ARGS=Sandbox 0` produces `Sandbox 0`.
 
 For additive options such as `ExitPolicy`, `MyFamily`, `FamilyId`, `Log`, and `ServerTransportPlugin`, extra lines add to the generated lines rather than replacing them.
 
@@ -176,9 +180,10 @@ The debug variant has a dedicated variable:
 TOR_CONTROL_PORT=9051
 ```
 
-It renders `ControlPort 127.0.0.1:9051` and `CookieAuthentication 1`. The runtime image rejects it. You can also set the same options through `TOR_EXTRA_ARGS`, but then the runtime image accepts them too:
+It renders `ControlPort 127.0.0.1:9051` and `CookieAuthentication 1`. The runtime image rejects `TOR_CONTROL_PORT`, and `TOR_EXTRA_ARGS` rejects `ControlPort` because the image owns it. If you need a control port in a runtime image, override the guard:
 
 ```
+TOR_ALLOW_UNSAFE_EXTRA_ARGS=1
 TOR_EXTRA_ARGS=ControlPort 127.0.0.1:9051;CookieAuthentication 1
 ```
 
@@ -191,9 +196,10 @@ TOR_METRICS_PORT=0.0.0.0:9035
 TOR_METRICS_POLICY=accept 10.0.0.0/8
 ```
 
-`TOR_EXTRA_ARGS` can also set the same options, but it does not add the `reject *` fallback or enforce `TOR_METRICS_PUBLIC`:
+`TOR_EXTRA_ARGS` can also set the same options, but it is rejected unless you override the guard, and it does not add the `reject *` fallback or enforce `TOR_METRICS_PUBLIC`:
 
 ```
+TOR_ALLOW_UNSAFE_EXTRA_ARGS=1
 TOR_EXTRA_ARGS=MetricsPort 0.0.0.0:9035;MetricsPortPolicy accept 10.0.0.0/8;MetricsPortPolicy reject *
 ```
 
@@ -232,6 +238,8 @@ Common errors:
 
 - `TOR_EXTRA_ARGS contains an empty entry`: remove the extra semicolon.
 - `TOR_EXTRA_ARGS must be a single line`: separate entries with semicolons, not newlines.
+- `TOR_EXTRA_ARGS <directive> is managed by the image`: use the dedicated variable named in the error, or set `TOR_ALLOW_UNSAFE_EXTRA_ARGS=1` if you really need to override it.
+- `torinit: warning: <file>:<line>: <directive> is managed by the image`: a `torrc.d` file sets an option the image also sets. The file is included last, so it wins. Remove the line if that is not what you want.
 - `Couldn't parse line` or `Unknown option`: tor rejected an entry. Check the directive name and value against the pinned man page.
 - `No such file or directory`: a referenced file is not mounted or not readable by UID/GID 65532.
 - `MaxMemInQueues is set to a low value`: the value is valid but small. Raise it if the relay is unreliable under load.
