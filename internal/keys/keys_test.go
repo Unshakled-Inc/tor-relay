@@ -156,6 +156,36 @@ func TestInstall(t *testing.T) {
 	}
 }
 
+func TestFingerprints(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "fingerprint"), "ExampleRelay 7A11C9EB35045D74B4C81942EE97AA083332797F\n", 0600)
+	writeFile(t, filepath.Join(dir, "fingerprint-ed25519"), "ExampleRelay WqMjyrXYMionEMhmKmG6q6S0yGHAw0onG1uRDw0e2pY\n", 0600)
+
+	rsa, ed25519, err := Fingerprints(dir)
+	if err != nil {
+		t.Fatalf("Fingerprints: %v", err)
+	}
+	if rsa != "7A11C9EB35045D74B4C81942EE97AA083332797F" {
+		t.Errorf("rsa = %q", rsa)
+	}
+	if ed25519 != "WqMjyrXYMionEMhmKmG6q6S0yGHAw0onG1uRDw0e2pY" {
+		t.Errorf("ed25519 = %q", ed25519)
+	}
+
+	if _, _, err := Fingerprints(t.TempDir()); err == nil {
+		t.Fatal("want error for missing fingerprint files")
+	} else if !strings.Contains(err.Error(), "read") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	bad := t.TempDir()
+	writeFile(t, filepath.Join(bad, "fingerprint"), "ExampleRelay\n", 0600)
+	writeFile(t, filepath.Join(bad, "fingerprint-ed25519"), "ExampleRelay WqMjyrXYMionEMhmKmG6q6S0yGHAw0onG1uRDw0e2pY\n", 0600)
+	if _, _, err := Fingerprints(bad); err == nil {
+		t.Fatal("want error for malformed fingerprint file")
+	}
+}
+
 func TestKeygenFamily(t *testing.T) {
 	fakeDir := t.TempDir()
 	fakeTor := filepath.Join(fakeDir, "tor")

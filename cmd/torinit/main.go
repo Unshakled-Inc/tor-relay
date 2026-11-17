@@ -46,6 +46,8 @@ func main() {
 		os.Exit(keygenFamilyCmd(args[1:]))
 	case "bridgeline":
 		os.Exit(bridgelineCmd(args[1:]))
+	case "fingerprint":
+		os.Exit(fingerprintCmd(args[1:]))
 	case "envdoc":
 		os.Exit(envdocCmd(args[1:]))
 	default:
@@ -291,6 +293,20 @@ func bridgelineCmd(args []string) int {
 		return 1
 	}
 	fmt.Println(line)
+	return 0
+}
+
+func fingerprintCmd(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(os.Stderr, "torinit: fingerprint takes no arguments")
+		return 2
+	}
+	rsa, ed25519, err := keys.Fingerprints(dataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "torinit: %v\n", err)
+		return 1
+	}
+	fmt.Printf("RSA: %s\nED25519: %s\n", rsa, ed25519)
 	return 0
 }
 

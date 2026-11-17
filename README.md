@@ -233,6 +233,7 @@ The image entrypoint is `torinit`. The current subcommands are:
 - `healthcheck`: read the PID file and exit 0 only if `/proc/<pid>` exists.
 - `keygen-family`: generate a family key in `/out` or the directory given by `--out`, print the `FamilyId` line, and refuse to overwrite an existing key unless `--force` is set.
 - `bridgeline`: print the obfs4 client bridge line from `/var/lib/tor/pt_state/obfs4_bridgeline.txt`, with the fingerprint filled in from `/var/lib/tor/fingerprint`.
+- `fingerprint`: print the relay's RSA and ed25519 fingerprints from `/var/lib/tor/fingerprint` and `/var/lib/tor/fingerprint-ed25519`.
 - `envdoc`: print the environment variable reference as a markdown table.
 
 Examples:
@@ -242,6 +243,7 @@ docker run --rm --env-file .env docker.io/unshakled/tor-relay:latest render
 docker run --rm --env-file .env docker.io/unshakled/tor-relay:latest verify
 docker run --rm docker.io/unshakled/tor-relay:latest version
 docker run --rm docker.io/unshakled/tor-relay:latest envdoc
+docker exec tor-relay /usr/local/bin/torinit fingerprint
 mkdir -p family
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/family:/out" docker.io/unshakled/tor-relay:latest keygen-family myfamily
 ```
@@ -365,7 +367,7 @@ To move an existing systemd relay onto the image:
 3. Create the `/var/lib/tor` volume.
 4. Copy `keys/secret_id_key`, `keys/ed25519_master_id_secret_key`, and any `*.secret_family_key` into the volume, owned by 65532:65532 with mode 0600. The keys directory must be mode 0700.
 5. Start the container with the same nickname and ORPort.
-6. Confirm the fingerprint in `/var/lib/tor/fingerprint` matches the old fingerprint.
+6. Confirm the fingerprint with `docker exec tor-relay /usr/local/bin/torinit fingerprint` and compare it with the old fingerprint.
 7. Watch Relay Search for the relay staying Running.
 
 Never run both instances with the same keys at the same time.
@@ -677,6 +679,7 @@ Replace the table between the envdoc start and end markers with the output. CI c
 - `TOR_OBFS4_PORT ... must differ from TOR_ORPORT`: pick a different port for obfs4.
 - `bridgeline: read bridge line ...`: tor has not started lyrebird yet, or the data directory does not contain `pt_state/obfs4_bridgeline.txt`. Check that the bridge is running.
 - `bridgeline: read fingerprint ...`: tor has not written `/var/lib/tor/fingerprint` yet. Wait for the first start to finish.
+- `fingerprint: read /var/lib/tor/fingerprint`: the relay has not started yet, so tor has not written its fingerprint. Start the relay and run the subcommand again.
 - `Managed proxies are not compatible with Sandbox mode`: remove `TOR_SANDBOX=1` from an obfs4 or WebTunnel bridge. The bridge default is already `0`.
 - `TOR_ROLE=webtunnel requires TOR_WEBTUNNEL_URL`: add the public https URL, including the path, to the env file.
 - `TOR_WEBTUNNEL_LISTEN ... must be host:port`: use a value such as `127.0.0.1:15000` or `0.0.0.0:15000`.

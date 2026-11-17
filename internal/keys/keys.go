@@ -130,6 +130,32 @@ func Install(keyFiles []KeyFile, destDir string) (InstallResult, error) {
 	return result, nil
 }
 
+// Fingerprints reads the RSA and ed25519 relay fingerprints that tor writes
+// after its first start. Each file contains "<nickname> <fingerprint>".
+func Fingerprints(dir string) (rsa, ed25519 string, err error) {
+	rsa, err = readFingerprint(filepath.Join(dir, "fingerprint"))
+	if err != nil {
+		return "", "", err
+	}
+	ed25519, err = readFingerprint(filepath.Join(dir, "fingerprint-ed25519"))
+	if err != nil {
+		return "", "", err
+	}
+	return rsa, ed25519, nil
+}
+
+func readFingerprint(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", path, err)
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) != 2 {
+		return "", fmt.Errorf("%s does not contain a nickname and fingerprint", path)
+	}
+	return fields[1], nil
+}
+
 // KeygenFamily runs tor --keygen-family in outDir and returns the FamilyId
 // line it prints. It refuses to overwrite an existing key unless force is
 // true.
