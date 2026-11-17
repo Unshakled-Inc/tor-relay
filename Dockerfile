@@ -166,9 +166,11 @@ LABEL org.opencontainers.image.source="https://github.com/Unshakled-Inc/tor-rela
 
 # Package versions are not pinned here. The base image is pinned by digest,
 # and Debian removes superseded versions from trixie, so exact pins would
-# break on security updates.
+# break on security updates. Upgrade the base packages so the debug image
+# does not keep an older library from the pinned base.
 # hadolint ignore=DL3008
 RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
  && apt-get install -y --no-install-recommends \
       ca-certificates \
       nyx \
