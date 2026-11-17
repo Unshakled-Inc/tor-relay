@@ -142,13 +142,34 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-args: |
             TOR_VERSION=${{ needs.prepare.outputs.version }}
+            TORINIT_VERSION=${{ needs.prepare.outputs.version }}
+            REVISION=${{ github.sha }}
             LYREBIRD_VERSION=${{ needs.prepare.outputs.lyrebird_version }}
             WEBTUNNEL_VERSION=${{ needs.prepare.outputs.webtunnel_version }}
           tags: tor-relay:ci
           load: true
           no-cache: ${{ inputs.no_cache }}
       - name: version
-        run: docker run --rm tor-relay:ci version
+        run: |
+          docker run --rm tor-relay:ci version | tee version.txt
+          if grep -q '^torinit dev$' version.txt; then
+            echo "torinit version is dev, the build did not receive TORINIT_VERSION" >&2
+            exit 1
+          fi
+          revision="$(docker image inspect tor-relay:ci --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          if [ -z "$revision" ] || [ "$revision" = "unknown" ]; then
+            echo "missing org.opencontainers.image.revision label" >&2
+            exit 1
+          fi
+      - name: check subcommands
+        run: |
+          docker run --rm tor-relay:ci envdoc > /dev/null
+          docker run --rm --env-file examples/middle/.env.example tor-relay:ci render > /dev/null
+          output="$(docker run --rm tor-relay:ci fingerprint 2>&1 || true)"
+          if printf '%s' "$output" | grep -q "unknown subcommand"; then
+            echo "fingerprint subcommand is missing" >&2
+            exit 1
+          fi
       - name: check env documentation
         if: ${{ matrix.artifact == 'amd64' }}
         run: |
@@ -174,6 +195,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-args: |
             TOR_VERSION=${{ needs.prepare.outputs.version }}
+            TORINIT_VERSION=${{ needs.prepare.outputs.version }}
+            REVISION=${{ github.sha }}
             LYREBIRD_VERSION=${{ needs.prepare.outputs.lyrebird_version }}
             WEBTUNNEL_VERSION=${{ needs.prepare.outputs.webtunnel_version }}
           tags: tor-relay:ci-debug
@@ -200,6 +223,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-args: |
             TOR_VERSION=${{ needs.prepare.outputs.version }}
+            TORINIT_VERSION=${{ needs.prepare.outputs.version }}
+            REVISION=${{ github.sha }}
             LYREBIRD_VERSION=${{ needs.prepare.outputs.lyrebird_version }}
             WEBTUNNEL_VERSION=${{ needs.prepare.outputs.webtunnel_version }}
           no-cache: ${{ inputs.no_cache }}
@@ -217,6 +242,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-args: |
             TOR_VERSION=${{ needs.prepare.outputs.version }}
+            TORINIT_VERSION=${{ needs.prepare.outputs.version }}
+            REVISION=${{ github.sha }}
             LYREBIRD_VERSION=${{ needs.prepare.outputs.lyrebird_version }}
             WEBTUNNEL_VERSION=${{ needs.prepare.outputs.webtunnel_version }}
           no-cache: ${{ inputs.no_cache }}

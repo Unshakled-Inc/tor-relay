@@ -108,11 +108,13 @@ RUN CGO_ENABLED=0 go build -trimpath \
 
 FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2 AS runtime
 ARG TOR_VERSION
+ARG REVISION=unknown
 
 LABEL org.opencontainers.image.source="https://github.com/Unshakled-Inc/tor-relay" \
       org.opencontainers.image.licenses="BSD-3-Clause" \
       org.opencontainers.image.vendor="Unshakled Inc." \
       org.opencontainers.image.version="${TOR_VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.title="tor-relay"
 
 ENV TORINIT_VARIANT=runtime
@@ -135,6 +137,15 @@ HEALTHCHECK --interval=60s --timeout=5s --start-period=120s CMD ["/usr/local/bin
 # The debug variant adds nyx on top of the same tor and pluggable transport
 # binaries. It uses the same pinned Debian base as the builder.
 FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS debug
+ARG TOR_VERSION
+ARG REVISION=unknown
+
+LABEL org.opencontainers.image.source="https://github.com/Unshakled-Inc/tor-relay" \
+      org.opencontainers.image.licenses="BSD-3-Clause" \
+      org.opencontainers.image.vendor="Unshakled Inc." \
+      org.opencontainers.image.version="${TOR_VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.title="tor-relay-debug"
 
 # Package versions are not pinned here. The base image is pinned by digest,
 # and Debian removes superseded versions from trixie, so exact pins would

@@ -16,7 +16,8 @@ versioned with the image until its first standalone release.
 - Tor 0.4.9.17 compiled from the signed upstream source release.
 - `torinit` entrypoint with `render`, `verify`, `run`, `version`,
   `healthcheck`, `keygen-family`, `bridgeline`, `fingerprint`, and `envdoc`
-  subcommands.
+  subcommands. `torinit version` reports the image version, and the image
+  carries the `org.opencontainers.image.revision` label.
 - Middle relay role.
 - Exit relay role with an explicit `I_UNDERSTAND_EXIT=true` acknowledgment
   and an operator-supplied exit policy.
@@ -61,4 +62,3 @@ versioned with the image until its first standalone release.
   restricted policy, or a private network.
 - Snowflake is out of scope. Use the Tor Project's official
   `thetorproject/snowflake-proxy` image.
-- `torinit` reports version `dev` in this release.
