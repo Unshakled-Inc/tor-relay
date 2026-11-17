@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 ARG TOR_VERSION
 ARG LYREBIRD_VERSION
 ARG WEBTUNNEL_VERSION
@@ -85,10 +83,19 @@ RUN CGO_ENABLED=0 go build -trimpath \
 # LYREBIRD_VERSION and the main package path is ./cmd/lyrebird.
 FROM golang:1.27.4-trixie@sha256:b54b2639de8c1bfe538ec5ffc45f29b1932235ac5f6d63c059853646677112d9 AS pt-build
 ARG LYREBIRD_VERSION
+ARG LYREBIRD_COMMIT
 ARG WEBTUNNEL_VERSION
+ARG WEBTUNNEL_COMMIT
 
-RUN git clone --depth 1 --branch "${LYREBIRD_VERSION}" \
-      https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird.git /src/lyrebird
+ENV GOFLAGS=-mod=readonly \
+    GOTOOLCHAIN=local
+
+RUN set -eu; \
+    [ -n "${LYREBIRD_COMMIT}" ] || { echo "LYREBIRD_COMMIT is required" >&2; exit 1; }; \
+    git clone --depth 1 --branch "${LYREBIRD_VERSION}" \
+      https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird.git /src/lyrebird; \
+    [ "$(git -C /src/lyrebird rev-parse HEAD)" = "${LYREBIRD_COMMIT}" ] \
+      || { echo "lyrebird ${LYREBIRD_VERSION} does not match commit ${LYREBIRD_COMMIT}" >&2; exit 1; }
 
 WORKDIR /src/lyrebird
 
@@ -97,8 +104,12 @@ RUN CGO_ENABLED=0 go build -trimpath \
       -o /pt/lyrebird ./cmd/lyrebird
 
 # hadolint ignore=DL3059
-RUN git clone --depth 1 --branch "${WEBTUNNEL_VERSION}" \
-      https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/webtunnel.git /src/webtunnel
+RUN set -eu; \
+    [ -n "${WEBTUNNEL_COMMIT}" ] || { echo "WEBTUNNEL_COMMIT is required" >&2; exit 1; }; \
+    git clone --depth 1 --branch "${WEBTUNNEL_VERSION}" \
+      https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/webtunnel.git /src/webtunnel; \
+    [ "$(git -C /src/webtunnel rev-parse HEAD)" = "${WEBTUNNEL_COMMIT}" ] \
+      || { echo "webtunnel ${WEBTUNNEL_VERSION} does not match commit ${WEBTUNNEL_COMMIT}" >&2; exit 1; }
 
 WORKDIR /src/webtunnel
 
@@ -128,6 +139,8 @@ COPY --from=tor-build --chown=65532:65532 --chmod=0700 /var/lib/tor /var/lib/tor
 USER 65532:65532
 VOLUME /var/lib/tor
 EXPOSE 9001
+
+STOPSIGNAL SIGINT
 
 ENTRYPOINT ["/usr/local/bin/torinit"]
 CMD ["run"]
@@ -172,6 +185,8 @@ ENV TORINIT_VARIANT=debug \
 USER 65532:65532
 VOLUME /var/lib/tor
 EXPOSE 9001
+
+STOPSIGNAL SIGINT
 
 ENTRYPOINT ["/usr/local/bin/torinit"]
 CMD ["run"]

@@ -21,6 +21,24 @@ jobs:
           version="$(cat VERSION)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+  keys:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: check tor signing key expiry
+        run: |
+          gpg --show-keys --with-colons keys/tor-release.asc > /tmp/keys.txt
+          awk -F: '/^pub:/ && $7 != "" {print $7}' /tmp/keys.txt > /tmp/expiries.txt
+          now="$(date +%s)"
+          fail=0
+          while IFS= read -r expiry; do
+            if [ "$expiry" -lt "$((now + 5184000))" ]; then
+              echo "Tor signing key expires within 60 days: $(date -u -d "@$expiry")" >&2
+              fail=1
+            fi
+          done < /tmp/expiries.txt
+          exit "$fail"
+
   release:
     needs: version
     permissions:
@@ -33,3 +51,38 @@ jobs:
       push: true
       no_cache: true
     secrets: inherit
+
+  heartbeat:
+    needs: [version, keys, release]
+    if: ${{ always() && !cancelled() && !contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: ping heartbeat
+        env:
+          HEARTBEAT_URL: ${{ secrets.HEARTBEAT_URL }}
+        run: |
+          if [ -n "$HEARTBEAT_URL" ]; then
+            curl -fsS --retry 3 "$HEARTBEAT_URL"
+          else
+            echo "HEARTBEAT_URL is not set, skipping"
+          fi
+
+  notify:
+    needs: [version, keys, release]
+    if: ${{ always() && contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: open an issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing="$(gh issue list --state open \
+            --search 'Scheduled weekly build failed in:title' \
+            --json number --jq '.[0].number')"
+          if [ -z "$existing" ]; then
+            gh issue create \
+              --title "Scheduled weekly build failed" \
+              --body "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi

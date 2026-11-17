@@ -72,6 +72,16 @@ while IFS= read -r line; do
         exit 1
     fi
 
+    # Record the owning Debian package so package scanners can see the
+    # copied library. Distroless reads /var/lib/dpkg/status.d/.
+    pkg=$(dpkg -S "$real" 2>/dev/null | head -1 | cut -d: -f1)
+    if [ -z "$pkg" ]; then
+        echo "error: no dpkg package owns $real" >&2
+        exit 1
+    fi
+    mkdir -p "$staging/var/lib/dpkg/status.d"
+    dpkg-query -s "$pkg" > "$staging/var/lib/dpkg/status.d/$pkg"
+
     # The runtime's /lib is a symlink to /usr/lib, so normalize both paths.
     # Copying a /lib directory tree into / would fail against that symlink.
     real=$(normalize "$real")

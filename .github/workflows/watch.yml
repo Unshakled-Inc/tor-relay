@@ -61,3 +61,75 @@ jobs:
       push: true
       no_cache: false
     secrets: inherit
+
+  heartbeat:
+    needs: [check, bump, release]
+    if: ${{ always() && !cancelled() && !contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: ping heartbeat
+        env:
+          HEARTBEAT_URL: ${{ secrets.HEARTBEAT_URL }}
+        run: |
+          if [ -n "$HEARTBEAT_URL" ]; then
+            curl -fsS --retry 3 "$HEARTBEAT_URL"
+          else
+            echo "HEARTBEAT_URL is not set, skipping"
+          fi
+
+  notify:
+    needs: [check, bump, release]
+    if: ${{ always() && contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: open an issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing="$(gh issue list --state open \
+            --search 'Scheduled watch failed in:title' \
+            --json number --jq '.[0].number')"
+          if [ -z "$existing" ]; then
+            gh issue create \
+              --title "Scheduled watch failed" \
+              --body "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi
+
+  transports:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: compare transport tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          check() {
+            repo="$1"
+            file="$2"
+            current="$(cat "$file")"
+            latest="$(git ls-remote --tags --refs --sort=-v:refname "$repo" | awk -F/ '{print $NF}' | head -1)"
+            if [ -z "$latest" ]; then
+              echo "could not read tags for $repo" >&2
+              return 0
+            fi
+            newer="$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)"
+            if [ "$newer" != "$current" ]; then
+              echo "$file is $current, upstream has $latest"
+              title="New $file tag: $latest"
+              existing="$(gh issue list --state open \
+                --search "$title in:title" \
+                --json number --jq '.[0].number')"
+              if [ -z "$existing" ]; then
+                gh issue create \
+                  --title "$title" \
+                  --body "Upstream has $latest, the image pins $current. Update $file and the matching commit file."
+              fi
+            fi
+          }
+          check https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird.git LYREBIRD_VERSION
+          check https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/webtunnel.git WEBTUNNEL_VERSION

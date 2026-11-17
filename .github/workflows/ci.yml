@@ -65,6 +65,12 @@ jobs:
           docker buildx build \
             --target runtime \
             --build-arg "TOR_VERSION=$(cat VERSION)" \
+            --build-arg "TORINIT_VERSION=$(cat VERSION)" \
+            --build-arg "REVISION=${{ github.sha }}" \
+            --build-arg "LYREBIRD_VERSION=$(cat LYREBIRD_VERSION)" \
+            --build-arg "LYREBIRD_COMMIT=$(cat LYREBIRD_COMMIT)" \
+            --build-arg "WEBTUNNEL_VERSION=$(cat WEBTUNNEL_VERSION)" \
+            --build-arg "WEBTUNNEL_COMMIT=$(cat WEBTUNNEL_COMMIT)" \
             --platform linux/amd64 \
             -t tor-relay:ci \
             --load .

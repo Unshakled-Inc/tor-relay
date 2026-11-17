@@ -1,0 +1,13 @@
+# Default owner for every path.
+* @robby-seventeen
+
+# Build and trust inputs get an explicit owner so a review is requested.
+/.github/ @robby-seventeen
+/Dockerfile @robby-seventeen
+/scripts/ @robby-seventeen
+/keys/ @robby-seventeen
+/VERSION @robby-seventeen
+/LYREBIRD_VERSION @robby-seventeen
+/LYREBIRD_COMMIT @robby-seventeen
+/WEBTUNNEL_VERSION @robby-seventeen
+/WEBTUNNEL_COMMIT @robby-seventeen

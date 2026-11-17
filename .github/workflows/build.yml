@@ -40,6 +40,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: tor-relay-publish
+  cancel-in-progress: false
+
 jobs:
   prepare:
     runs-on: ubuntu-24.04
@@ -49,13 +53,17 @@ jobs:
       datestamp: ${{ steps.version.outputs.datestamp }}
       tags: ${{ steps.version.outputs.tags }}
       lyrebird_version: ${{ steps.version.outputs.lyrebird_version }}
+      lyrebird_commit: ${{ steps.version.outputs.lyrebird_commit }}
       webtunnel_version: ${{ steps.version.outputs.webtunnel_version }}
+      webtunnel_commit: ${{ steps.version.outputs.webtunnel_commit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: compute version and tags
         id: version
+        env:
+          TOR_VERSION_INPUT: ${{ inputs.tor_version }}
         run: |
-          version="${{ inputs.tor_version }}"
+          version="${TOR_VERSION_INPUT:-}"
           if [ -z "$version" ]; then
             version="$(cat VERSION)"
           fi
@@ -70,9 +78,19 @@ jobs:
             echo "invalid lyrebird version: $lyrebird_version" >&2
             exit 1
           fi
+          lyrebird_commit="$(cat LYREBIRD_COMMIT)"
+          if ! printf '%s\n' "$lyrebird_commit" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "invalid lyrebird commit: $lyrebird_commit" >&2
+            exit 1
+          fi
           webtunnel_version="$(cat WEBTUNNEL_VERSION)"
           if ! printf '%s\n' "$webtunnel_version" | grep -Eq '^[A-Za-z0-9._-]+$'; then
             echo "invalid webtunnel version: $webtunnel_version" >&2
+            exit 1
+          fi
+          webtunnel_commit="$(cat WEBTUNNEL_COMMIT)"
+          if ! printf '%s\n' "$webtunnel_commit" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "invalid webtunnel commit: $webtunnel_commit" >&2
             exit 1
           fi
           {
@@ -80,7 +98,9 @@ jobs:
             echo "series=$series"
             echo "datestamp=$datestamp"
             echo "lyrebird_version=$lyrebird_version"
+            echo "lyrebird_commit=$lyrebird_commit"
             echo "webtunnel_version=$webtunnel_version"
+            echo "webtunnel_commit=$webtunnel_commit"
           } >> "$GITHUB_OUTPUT"
           {
             echo 'tags<<EOF'
@@ -145,7 +165,9 @@ jobs:
             TORINIT_VERSION=${{ needs.prepare.outputs.version }}
             REVISION=${{ github.sha }}
             LYREBIRD_VERSION=${{ needs.prepare.outputs.lyrebird_version }}
+            LYREBIRD_COMMIT=${{ needs.prepare.outputs.lyrebird_commit }}
             WEBTUNNEL_VERSION=${{ needs.prepare.outputs.webtunnel_version }}
+            WEBTUNNEL_COMMIT=${{ needs.prepare.outputs.webtunnel_commit }}
           tags: tor-relay:ci
           load: true
           no-cache: ${{ inputs.no_cache }}
@@ -198,7 +220,9 @@ jobs:
             TORINIT_VERSION=${{ needs.prepare.outputs.version }}
             REVISION=${{ github.sha }}
             LYREBIRD_VERSION=${{ needs.prepare.outputs.lyrebird_version }}
+            LYREBIRD_COMMIT=${{ needs.prepare.outputs.lyrebird_commit }}
             WEBTUNNEL_VERSION=${{ needs.prepare.outputs.webtunnel_version }}
+            WEBTUNNEL_COMMIT=${{ needs.prepare.outputs.webtunnel_commit }}
           tags: tor-relay:ci-debug
           load: true
           no-cache: ${{ inputs.no_cache }}
@@ -214,6 +238,18 @@ jobs:
           fi
       - name: check nyx
         run: docker run --rm --entrypoint /usr/bin/nyx tor-relay:ci-debug -v
+      - name: bootstrap smoke test
+        if: ${{ matrix.artifact == 'amd64' }}
+        run: |
+          trap 'docker rm -f smoke >/dev/null 2>&1 || true' EXIT
+          docker run -d --name smoke --network host --read-only --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --env-file examples/middle/.env.example tor-relay:ci
+          if ! timeout 180 sh -c 'until docker logs smoke 2>&1 | grep -q "Bootstrapped 100%"; do sleep 3; done'; then
+            echo "relay did not bootstrap within 180 seconds" >&2
+            docker logs smoke
+            exit 1
+          fi
       - name: build and push runtime by digest
         id: digest-runtime
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -226,7 +262,9 @@ jobs:
             TORINIT_VERSION=${{ needs.prepare.outputs.version }}
             REVISION=${{ github.sha }}
             LYREBIRD_VERSION=${{ needs.prepare.outputs.lyrebird_version }}
+            LYREBIRD_COMMIT=${{ needs.prepare.outputs.lyrebird_commit }}
             WEBTUNNEL_VERSION=${{ needs.prepare.outputs.webtunnel_version }}
+            WEBTUNNEL_COMMIT=${{ needs.prepare.outputs.webtunnel_commit }}
           no-cache: ${{ inputs.no_cache }}
           outputs: |
             type=image,name=docker.io/unshakled/tor-relay,push-by-digest=true,name-canonical=true,push=true
@@ -245,7 +283,9 @@ jobs:
             TORINIT_VERSION=${{ needs.prepare.outputs.version }}
             REVISION=${{ github.sha }}
             LYREBIRD_VERSION=${{ needs.prepare.outputs.lyrebird_version }}
+            LYREBIRD_COMMIT=${{ needs.prepare.outputs.lyrebird_commit }}
             WEBTUNNEL_VERSION=${{ needs.prepare.outputs.webtunnel_version }}
+            WEBTUNNEL_COMMIT=${{ needs.prepare.outputs.webtunnel_commit }}
           no-cache: ${{ inputs.no_cache }}
           outputs: |
             type=image,name=docker.io/unshakled/tor-relay,push-by-digest=true,name-canonical=true,push=true
@@ -342,25 +382,34 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ghcr.io/unshakled-inc/tor-relay:scan-runtime-${{ github.run_id }}
-          severity: CRITICAL
+          severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: 1
+          format: json
+          output: trivy-runtime.json
           version: v0.70.0
+      - name: assert runtime library metadata
+        run: |
+          if ! jq -e '[.Results[]?.Packages[]?.Name] | index("libssl3t64") != null' trivy-runtime.json > /dev/null; then
+            echo "Trivy did not see libssl3t64; dpkg metadata is missing" >&2
+            exit 1
+          fi
       - name: scan debug with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ghcr.io/unshakled-inc/tor-relay:scan-debug-${{ github.run_id }}
-          severity: CRITICAL
+          severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: 1
           version: v0.70.0
 
   publish:
-    if: ${{ inputs.push }}
+    if: ${{ inputs.push && github.ref == 'refs/heads/main' }}
+    environment: release
     needs: [prepare, build, scan]
     runs-on: ubuntu-24.04
     permissions:
-      contents: read
+      contents: write
       packages: write
       id-token: write
     steps:
@@ -468,11 +517,51 @@ jobs:
             ghcr.io/unshakled-inc/tor-relay:latest \
             ghcr.io/unshakled-inc/tor-relay:latest-debug; do
             cosign verify "$ref" \
-              --certificate-identity-regexp 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/.*' \
+              --certificate-identity 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/build.yml@refs/heads/main' \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com
           done
+      - name: assert provenance
+        run: |
+          for ref in \
+            docker.io/unshakled/tor-relay:latest \
+            docker.io/unshakled/tor-relay:latest-debug \
+            ghcr.io/unshakled-inc/tor-relay:latest \
+            ghcr.io/unshakled-inc/tor-relay:latest-debug; do
+            provenance="$(docker buildx imagetools inspect "$ref" --format '{{json .Provenance}}')"
+            if [ -z "$provenance" ] || [ "$provenance" = "{}" ]; then
+              echo "missing provenance for $ref" >&2
+              exit 1
+            fi
+          done
+      - name: create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name="${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.datestamp }}"
+          if gh release view "$name" >/dev/null 2>&1; then
+            echo "release $name already exists"
+            exit 0
+          fi
+          hub_digest="$(docker buildx imagetools inspect docker.io/unshakled/tor-relay:${{ needs.prepare.outputs.version }} --format '{{.Manifest.Digest}}')"
+          ghcr_digest="$(docker buildx imagetools inspect ghcr.io/unshakled-inc/tor-relay:${{ needs.prepare.outputs.version }} --format '{{.Manifest.Digest}}')"
+          notes="$(cat <<EOF
+          Tor ${{ needs.prepare.outputs.version }}
+          lyrebird ${{ needs.prepare.outputs.lyrebird_version }} (${{ needs.prepare.outputs.lyrebird_commit }})
+          webtunnel ${{ needs.prepare.outputs.webtunnel_version }} (${{ needs.prepare.outputs.webtunnel_commit }})
+          commit ${{ github.sha }}
+
+          Docker Hub: docker.io/unshakled/tor-relay@$hub_digest
+          GHCR: ghcr.io/unshakled-inc/tor-relay@$ghcr_digest
+
+          Verify:
+          cosign verify docker.io/unshakled/tor-relay@$hub_digest --certificate-identity 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/build.yml@refs/heads/main' --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          EOF
+          )"
+          gh release create "$name" --target "${{ github.sha }}" --title "$name" --notes "$notes"
 
   readme:
+    if: ${{ inputs.push && github.ref == 'refs/heads/main' }}
+    environment: release
     needs: prepare
     runs-on: ubuntu-24.04
     steps:

@@ -1,0 +1,37 @@
+name: release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - Dockerfile
+      - .github/workflows/build.yml
+      - .github/workflows/release.yml
+      - cmd/**
+      - internal/**
+      - scripts/**
+      - keys/**
+      - go.mod
+      - go.sum
+      - VERSION
+      - LYREBIRD_VERSION
+      - LYREBIRD_COMMIT
+      - WEBTUNNEL_VERSION
+      - WEBTUNNEL_COMMIT
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/build.yml
+    with:
+      tor_version: ''
+      push: true
+      no_cache: false
+    secrets: inherit
