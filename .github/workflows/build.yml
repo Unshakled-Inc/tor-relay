@@ -536,7 +536,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           name="${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.datestamp }}"
-          if gh release view "$name" >/dev/null 2>&1; then
+          if gh release view "$name" --repo Unshakled-Inc/tor-relay >/dev/null 2>&1; then
             echo "release $name already exists"
             exit 0
           fi
@@ -555,7 +555,7 @@ jobs:
           cosign verify docker.io/unshakled/tor-relay@$hub_digest --certificate-identity 'https://github.com/Unshakled-Inc/tor-relay/.github/workflows/build.yml@refs/heads/main' --certificate-oidc-issuer https://token.actions.githubusercontent.com
           EOF
           )"
-          gh release create "$name" --target "${{ github.sha }}" --title "$name" --notes "$notes"
+          gh release create "$name" --repo Unshakled-Inc/tor-relay --target "${{ github.sha }}" --title "$name" --notes "$notes"
 
   readme:
     if: ${{ inputs.push && github.ref == 'refs/heads/main' }}
