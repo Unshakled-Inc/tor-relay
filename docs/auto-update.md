@@ -34,6 +34,7 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+    stop_grace_period: 45s
     volumes:
       - tor-data:/var/lib/tor
 

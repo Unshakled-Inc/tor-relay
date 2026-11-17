@@ -153,6 +153,7 @@ docker run -d \
   --cap-drop ALL \
   --security-opt no-new-privileges \
   --restart unless-stopped \
+  --stop-timeout 45 \
   -v /srv/tor-relay/data:/var/lib/tor \
   --env-file .env \
   docker.io/unshakled/tor-relay:latest

@@ -65,6 +65,7 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+    stop_grace_period: 45s
     volumes:
       - tor-data:/var/lib/tor
     secrets:
@@ -104,6 +105,7 @@ With plain `docker run`, bind-mount the directory:
 docker run -d \
   --name tor-relay \
   --network host \
+  --stop-timeout 45 \
   -v /srv/tor-relay/family:/run/secrets:ro \
   --env-file .env \
   docker.io/unshakled/tor-relay:latest

@@ -27,6 +27,7 @@ Requirements:
 - Docker Engine with Buildx support.
 - A host with a public IPv4 or IPv6 address.
 - ORPort reachable from the internet. Host networking is recommended.
+- If you just added your user to the `docker` group, log out and back in, or run `newgrp docker`. Otherwise `docker pull` fails with a socket permission error.
 
 Replace the nickname and contact with your own values. Nicknames are not unique on the Tor network, but a distinct name makes the relay easier to find.
 
@@ -59,10 +60,13 @@ docker run -d \
   --cap-drop ALL \
   --security-opt no-new-privileges \
   --restart unless-stopped \
+  --stop-timeout 45 \
   -v tor-data:/var/lib/tor \
   --env-file .env \
   docker.io/unshakled/tor-relay:latest
 ```
+
+`--stop-timeout 45` gives tor time to shut down cleanly. Tor's default `ShutdownWaitLength` is 30 seconds, and Docker's default stop timeout is 10 seconds, so without it Docker kills tor before it finishes. With Compose, set `stop_grace_period: 45s`.
 
 4. Follow the log:
 
@@ -89,6 +93,7 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+    stop_grace_period: 45s
     volumes:
       - tor-data:/var/lib/tor
 
@@ -699,6 +704,7 @@ Replace the table between the envdoc start and end markers with the output. CI c
 - The container exits immediately: run `torinit verify` with the same env file. The error message names the invalid variable or value.
 - `exec: "/bin/sh": stat /bin/sh: no such file or directory`: expected. The runtime image has no shell. Use `torinit` subcommands or `docker exec` with the torinit binary.
 - Healthcheck is unhealthy: check the tor log and the PID file at `/var/lib/tor/.torinit/pid`.
+- `docker stop` returns quickly and the log has no `Clean shutdown finished`: Docker killed tor before it could shut down. Add `--stop-timeout 45` to `docker run`, or `stop_grace_period: 45s` to Compose.
 
 ## Roadmap
 
