@@ -746,6 +746,8 @@ go run ./cmd/torinit envdoc
 
 Replace the table between the envdoc start and end markers with the output. CI checks that the table matches.
 
+The Docker Hub repository description is generated from `docs/dockerhub.md`. Edit that file instead of relying on Docker Hub's 25 KB README limit.
+
 ## Troubleshooting
 
 - `Unable to find IPv4 address for ORPort`: set `TOR_ADDRESS` to the public address, or use host networking so tor can see the host interfaces.
