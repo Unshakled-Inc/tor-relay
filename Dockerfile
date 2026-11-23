@@ -67,7 +67,7 @@ RUN chmod +x /src/collect-libs.sh \
  && chmod 0700 /var/lib/tor
 
 # torinit is a static Go binary. No cgo, no external modules.
-FROM golang:1.27.4-trixie@sha256:b54b2639de8c1bfe538ec5ffc45f29b1932235ac5f6d63c059853646677112d9 AS torinit-build
+FROM golang:1.27.4-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d AS torinit-build
 ARG TORINIT_VERSION=dev
 
 WORKDIR /src
@@ -81,7 +81,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
 
 # lyrebird is the obfs4 pluggable transport. The tag is pinned in
 # LYREBIRD_VERSION and the main package path is ./cmd/lyrebird.
-FROM golang:1.27.4-trixie@sha256:b54b2639de8c1bfe538ec5ffc45f29b1932235ac5f6d63c059853646677112d9 AS pt-build
+FROM golang:1.27.4-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d AS pt-build
 ARG LYREBIRD_VERSION
 ARG LYREBIRD_COMMIT
 ARG WEBTUNNEL_VERSION
