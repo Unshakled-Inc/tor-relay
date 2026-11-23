@@ -121,7 +121,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
       -ldflags "-s -w" \
       -o /pt/webtunnel ./main/server
 
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2 AS runtime
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:532c7a94f9e96ba9db75eb9388f4227751131c7cb0a411d1a8521af4096135de AS runtime
 ARG TOR_VERSION
 ARG REVISION=unknown
 
